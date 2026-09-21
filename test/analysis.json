@@ -1,39 +1,40 @@
 {
-  "core_idea": "Model each pile only by the exponent of 2 dividing it, then classify positions by the minimum such exponent. Odd minimum gives the first player a move to a losing even state; even minimum with all piles tied is losing for the first player; even minimum with a larger pile present can be perpetually maintained as a draw.",
+  "core_idea": "Replace each pile value by its 2-adic valuation, the position of its least significant set bit. The game's outcome is controlled by the minimum valuation: an odd minimum is winning, an even minimum with all valuations equal is losing, and an even minimum with mixed valuations allows an infinite draw-preserving strategy.",
   "key_observations": [
-    "A move is possible exactly when some pile has positive 2-adic valuation, and the game ends when all valuations are 0.",
-    "When all piles have the same valuation c > 0, any move decreases every pile's valuation to c - 1.",
-    "If a pile with the current minimum valuation is chosen, all piles can collapse to that minimum-minus-one level.",
-    "The parity of the minimum valuation determines whether collapsing the game hands the opponent a winning or losing synchronized state.",
-    "When the minimum valuation is even but not shared by all piles, choosing a pile above the minimum preserves both a minimum pile and a higher-valued pile, so neither player is forced to end the game.",
-    "Counting configurations can be done by fixing the exact minimum valuation, and counting all-equal valuation cases separately."
+    "A pile is playable exactly when its least significant set bit position is greater than 0; the game ends when all positions are 0.",
+    "If all piles have the same positive least-significant-bit position c, then any move decreases every pile's position to c-1.",
+    "The minimum least-significant-bit position m is the decisive invariant-like quantity for classifying positions.",
+    "When m is odd, choosing a pile attaining the minimum forces all piles to m-1, giving the opponent an even equal-minimum losing structure.",
+    "When m is even and all piles attain m, any move gives the opponent an odd equal state, so the current player loses.",
+    "When m is even but not all piles attain m, players can keep choosing piles above the minimum, preserving both a minimum pile and a larger pile, so neither player is forced to end the game.",
+    "Counting configurations becomes counting arrays by the exact minimum of lsb values and, separately, arrays where all values have the same exact even lsb."
   ],
   "reasoning_patterns": [
-    "Replace large numeric state with the invariant-relevant valuation or rank.",
-    "Classify game states by a small aggregate statistic, such as the minimum, instead of the full configuration.",
-    "Analyze special synchronized states first because transitions become simple and reveal winning/losing parity.",
-    "Use a move that collapses the state to a controlled canonical form.",
-    "For draw games, identify a cycle or maintained invariant that both players can use to avoid losing.",
-    "Count objects by exact minimum using difference of nested counts.",
-    "Separate terminal/winning/losing/drawing classes, then count the remainder by complement."
+    "Project numeric game states onto a smaller invariant that captures legal moves and outcome-relevant behavior.",
+    "Classify impartial game positions by structural cases instead of computing Grundy values when the transition has strong regularity.",
+    "Analyze what a move does to extrema, especially the minimum, rather than tracking every value.",
+    "Identify equal-state collapse: when all components share a key value, one move transforms the whole state uniformly.",
+    "Separate winning, losing, and drawing positions by whether a player can force progress or preserve a nonterminal invariant indefinitely.",
+    "Count outcomes by fixing an exact minimum and subtracting configurations with a larger minimum.",
+    "Use complement counting for the remaining category after disjoint winning and losing cases are counted."
   ],
   "questions": [
-    "What part of each number actually affects legal moves and transitions?",
-    "Is there an invariant or monotone statistic that controls the outcome?",
-    "What happens when all components have the same key value?",
-    "Can I move to a canonical state whose outcome is already known?",
-    "Does the parity of a depth, valuation, or distance decide the winner?",
-    "If winning is impossible, can both players preserve a non-terminal condition forever?",
+    "What simplified feature of each value determines whether a move is legal?",
+    "Is there an extremal value that controls the whole state?",
+    "What happens when all components share the same key feature?",
+    "Can I classify positions by the parity or category of an invariant?",
+    "Can a player preserve a nonterminal structure forever?",
     "Can I count configurations by fixing the exact minimum?",
-    "Which cases are easier to count directly, and which can be obtained by complement?"
+    "After counting the decisive cases, can the rest be obtained by complement?"
   ],
   "skill_path": [
-    "game_theory/invariants/valuation_state_compression/minimum_parity_classification"
+    "games/invariants/minimum_classification/draw_preserving_extremal_state"
   ],
   "probably_related": [
-    "number_theory/adic_valuation/state_abstraction",
-    "game_theory/draw_detection/invariant_preserving_cycle",
-    "combinatorics/counting/exact_minimum_by_nested_difference",
-    "game_theory/canonical_states/synchronized_position_analysis"
+    "number_theory/bit_properties/least_significant_bit/valuation_reduction",
+    "games/state_compression/outcome_classification/structural_cases",
+    "counting/exact_extremum/subtract_larger_threshold",
+    "counting/complement/disjoint_outcome_partition",
+    "strategy/invariant_preservation/infinite_play_draw"
   ]
 }
