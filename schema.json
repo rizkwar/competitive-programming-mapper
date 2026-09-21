@@ -1,8 +1,47 @@
 {
-  "core_idea": "string",
-  "reasoning_patterns": ["string"],
-  "questions": ["string"],
-  "signals": ["string"],
-  "candidate_path": ["string"],
-  "related_patterns": ["string"]
+  "type": "object",
+  "properties": {
+    "core_idea": {
+      "type": "string"
+    },
+    "reasoning_patterns": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "questions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "signals": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "candidate_path": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "related_patterns": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "core_idea",
+    "reasoning_patterns",
+    "questions",
+    "signals",
+    "candidate_path",
+    "related_patterns"
+  ],
+  "additionalProperties": false
 }
