@@ -9,7 +9,10 @@ from main import (
     SKILLS_DIR,
     ask_existing_skill_match,
     extract_json_response,
+    get_skill_path,
     process_skill,
+    validate_analysis_response,
+    validate_match_response,
 )
 from skill_search import load_skill_documents, rank_candidates
 
@@ -50,6 +53,35 @@ class SkillSearchTests(unittest.TestCase):
             extract_json_response(response),
             {"core_idea": "invariant"},
         )
+
+    def test_get_skill_path_accepts_string_and_fragment_lists(self) -> None:
+        analysis = {"skill_path": ["games", "invariants", "minimum_valuation"]}
+        self.assertEqual(
+            get_skill_path(analysis),
+            SKILLS_DIR / "games" / "invariants" / "minimum_valuation.md",
+        )
+
+        analysis = {"skill_path": "game_theory/valuation"}
+        self.assertEqual(
+            get_skill_path(analysis),
+            SKILLS_DIR / "game_theory" / "valuation.md",
+        )
+
+    def test_analysis_response_requires_all_schema_fields(self) -> None:
+        with self.assertRaisesRegex(ValueError, "missing required"):
+            validate_analysis_response({"core_idea": "invariant"})
+
+    def test_match_response_rejects_invalid_decision(self) -> None:
+        with self.assertRaisesRegex(ValueError, "invalid value"):
+            validate_match_response(
+                {"decision": "MAYBE", "path": None, "reason": "Unclear."}
+            )
+
+    def test_match_response_requires_path_for_reuse(self) -> None:
+        with self.assertRaisesRegex(ValueError, "must provide a path"):
+            validate_match_response(
+                {"decision": "REUSE", "path": None, "reason": "Same skill."}
+            )
 
     @patch("main.subprocess.run")
     def test_copilot_match_sends_a_string_to_standard_input(self, run) -> None:

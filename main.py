@@ -55,7 +55,7 @@ def extract_json_response(response: str) -> dict:
     """Parse a JSON object even when a CLI wraps it in a Markdown fence."""
     response = response.strip()
     try:
-        return json.loads(response)
+        value = json.loads(response)
     except json.JSONDecodeError:
         fenced = re.search(
             r"```(?:json)?\s*(\{.*?\})\s*```",
@@ -63,8 +63,90 @@ def extract_json_response(response: str) -> dict:
             flags=re.IGNORECASE | re.DOTALL,
         )
         if fenced:
-            return json.loads(fenced.group(1))
-        raise
+            value = json.loads(fenced.group(1))
+        else:
+            raise
+    if not isinstance(value, dict):
+        raise ValueError("AI response must be a JSON object.")
+    return value
+
+
+def validate_schema_response(
+    value: dict,
+    *,
+    required: tuple[str, ...],
+    list_fields: tuple[str, ...] = (),
+    string_fields: tuple[str, ...] = (),
+    optional_fields: tuple[str, ...] = (),
+) -> dict:
+    """Validate the small response shapes used by the analysis pipeline."""
+    missing = [field for field in required if field not in value]
+    if missing:
+        raise ValueError(f"AI response is missing required field(s): {', '.join(missing)}.")
+
+    unexpected = sorted(
+        set(value)
+        - set(required)
+        - set(list_fields)
+        - set(string_fields)
+        - set(optional_fields)
+    )
+    if unexpected:
+        raise ValueError(
+            f"AI response contains unexpected field(s): {', '.join(unexpected)}."
+        )
+
+    for field in list_fields:
+        if not isinstance(value[field], list) or not all(
+            isinstance(item, str) for item in value[field]
+        ):
+            raise ValueError(f"AI response field '{field}' must be a list of strings.")
+
+    for field in string_fields:
+        if not isinstance(value[field], str):
+            raise ValueError(f"AI response field '{field}' must be a string.")
+
+    return value
+
+
+def validate_analysis_response(value: dict) -> dict:
+    return validate_schema_response(
+        value,
+        required=(
+            "core_idea",
+            "key_observations",
+            "reasoning_patterns",
+            "questions",
+            "skill_path",
+            "probably_related",
+        ),
+        list_fields=(
+            "key_observations",
+            "reasoning_patterns",
+            "questions",
+            "skill_path",
+            "probably_related",
+        ),
+        string_fields=("core_idea",),
+    )
+
+
+def validate_match_response(value: dict) -> dict:
+    validate_schema_response(
+        value,
+        required=("decision", "path", "reason"),
+        string_fields=("decision", "reason"),
+        optional_fields=("path",),
+    )
+    if value["decision"] not in {"REUSE", "EXTEND", "CREATE_NEW"}:
+        raise ValueError("AI response field 'decision' has an invalid value.")
+    if value["path"] is not None and not isinstance(value["path"], str):
+        raise ValueError("AI response field 'path' must be a string or null.")
+    if value["decision"] == "CREATE_NEW" and value["path"] is not None:
+        raise ValueError("CREATE_NEW responses must use a null path.")
+    if value["decision"] in {"REUSE", "EXTEND"} and not value["path"]:
+        raise ValueError(f"{value['decision']} responses must provide a path.")
+    return value
 
 
 def run_codex(problem_dir: Path, output_file: Path) -> None:
@@ -192,18 +274,55 @@ def load_analysis(output_file: Path, provider: str) -> dict:
         encoding="utf-8",
     )
 
-    return data
+    try:
+        return validate_analysis_response(data)
+    except ValueError as error:
+        print(f"ERROR: {provider.title()} returned invalid analysis JSON.")
+        print(f"  {error}")
+        sys.exit(1)
+
+
+def _flatten_skill_path_items(value: object) -> list[str]:
+    """Normalize skill_path payloads that may be list fragments or a single string."""
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple, set)):
+        items: list[str] = []
+        for item in value:
+            items.extend(_flatten_skill_path_items(item))
+        return items
+    text = str(value).strip()
+    if not text:
+        return []
+    cleaned = text.replace("\\", "/")
+    parts = [part.strip() for part in cleaned.split("/") if part.strip()]
+    return [part for part in parts if part not in {".", ".."}]
+
+
+def _string_list(value: object) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple, set)):
+        items: list[str] = []
+        for item in value:
+            if item is None:
+                continue
+            text = str(item).strip()
+            if text:
+                items.append(text)
+        return items
+    text = str(value).strip()
+    return [text] if text else []
 
 
 def get_skill_path(analysis: dict) -> Path:
-    paths = analysis.get("skill_path", [])
-
-    if len(paths) != 1:
-        print("ERROR: Expected exactly one skill_path.")
+    payload = analysis.get("skill_path", [])
+    raw_parts = _flatten_skill_path_items(payload)
+    if not raw_parts:
+        print("ERROR: Empty skill path.")
         sys.exit(1)
 
-    skill_path = paths[0].strip("/\\")
-
+    skill_path = "/".join(raw_parts)
     if not skill_path:
         print("ERROR: Empty skill path.")
         sys.exit(1)
@@ -307,7 +426,15 @@ If you choose CREATE_NEW, path must be null.
                     input=match_prompt,
                 )
                 result = extract_json_response(completed.stdout)
-        except (FileNotFoundError, subprocess.CalledProcessError, json.JSONDecodeError):
+            validate_match_response(result)
+        except (
+            FileNotFoundError,
+            subprocess.CalledProcessError,
+            json.JSONDecodeError,
+            ValueError,
+        ) as error:
+            if isinstance(error, ValueError):
+                print(f"WARNING: Existing-skill matcher returned invalid JSON: {error}")
             print("WARNING: Existing-skill matching failed; continuing with new-skill detection.")
             return "CREATE_NEW", None, "Matcher failed."
 
@@ -326,41 +453,28 @@ If you choose CREATE_NEW, path must be null.
 
 def skill_content(analysis: dict, skill_file: Path) -> str:
     """Build the Markdown content for a newly proposed skill."""
+    questions = _string_list(analysis.get("questions", []))
+    observations = _string_list(analysis.get("key_observations", []))
+    patterns = _string_list(analysis.get("reasoning_patterns", []))
+    related = _string_list(analysis.get("probably_related", []))
+
     return (
         f"# {skill_file.stem.replace('_', ' ').title()}\n\n"
 
         "## Questions\n\n"
-        + "\n".join(
-            f"- {question}"
-            for question in analysis.get("questions", [])
-        )
+        + "\n".join(f"- {question}" for question in questions)
         + "\n\n"
 
         "## Key Observations\n\n"
-        + "\n".join(
-            f"- {observation}"
-            for observation in analysis.get(
-                "key_observations", []
-            )
-        )
+        + "\n".join(f"- {observation}" for observation in observations)
         + "\n\n"
 
         "## Reasoning Patterns\n\n"
-        + "\n".join(
-            f"- {pattern}"
-            for pattern in analysis.get(
-                "reasoning_patterns", []
-            )
-        )
+        + "\n".join(f"- {pattern}" for pattern in patterns)
         + "\n\n"
 
         "## Probably Related\n\n"
-        + "\n".join(
-            f"- {related}"
-            for related in analysis.get(
-                "probably_related", []
-            )
-        )
+        + "\n".join(f"- {related_item}" for related_item in related)
         + "\n"
     )
 

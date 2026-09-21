@@ -59,6 +59,20 @@ def load_skill_documents(skills_dir: Path) -> list[SkillDocument]:
 
 def analysis_query(analysis: dict) -> str:
     """Create a semantic-search query from the Codex analysis."""
+
+    def flatten(value: object) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, (list, tuple, set)):
+            items: list[str] = []
+            for item in value:
+                items.extend(flatten(item))
+            return items
+        text = str(value).strip()
+        if not text:
+            return []
+        return [text]
+
     fields: list[str] = []
     for key in (
         "core_idea",
@@ -68,11 +82,7 @@ def analysis_query(analysis: dict) -> str:
         "questions",
         "probably_related",
     ):
-        value = analysis.get(key, "")
-        if isinstance(value, list):
-            fields.extend(str(item) for item in value)
-        else:
-            fields.append(str(value))
+        fields.extend(flatten(analysis.get(key, "")))
     return " ".join(fields)
 
 
