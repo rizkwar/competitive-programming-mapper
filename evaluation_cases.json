@@ -1,0 +1,12 @@
+{
+  "cases": [
+    {
+      "id": "minimum-valuation-game",
+      "problem_dir": "test",
+      "expected": {
+        "decision": "REUSE",
+        "path": "game_theory/invariants/valuation_analysis/minimum_level_parity_classification"
+      }
+    }
+  ]
+}

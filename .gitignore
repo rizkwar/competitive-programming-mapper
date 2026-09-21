@@ -21,6 +21,9 @@ ENV/
 .env.*
 *.log
 
+# Outputs from evaluation runs
+evaluation_results/
+
 # Repository-local skill drafts and generated skill content
 skills/
 
