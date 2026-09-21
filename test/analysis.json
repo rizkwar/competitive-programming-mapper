@@ -1,44 +1,38 @@
 {
-  "core_idea": "Track only the position of the least significant set bit of each pile. The minimum such position determines the outcome: an odd minimum lets the first player move to a losing state, an even minimum with all values equal gives the second player a win, and an even minimum with unequal values allows both players to avoid termination indefinitely, producing a draw.",
+  "core_idea": "The condition is governed entirely by how many copies of the smallest relevant value, 0, are available. Zero copies make every MEX zero, one copy makes exactly one MEX positive and is impossible, while at least two copies can support two multisets with MEX 1 and leave the third with MEX 0.",
   "key_observations": [
-    "A pile is playable exactly when its least significant set-bit position is positive; the game ends when all such positions are zero.",
-    "If every pile has the same least significant set-bit position c, choosing any pile changes every pile's position to c - 1.",
-    "If m is the minimum least significant set-bit position, choosing a pile attaining m makes every pile's position equal to m - 1.",
-    "When m is odd, the first move reaches a state with an even common position, which is losing for the next player.",
-    "When m is even and every pile has position m, every move reaches a state with an odd common position, so the current player loses under optimal play.",
-    "When m is even and some piles have position m while others have a larger position, a player can repeatedly choose a pile with position greater than m, preserving both types of piles and preventing the terminal state.",
-    "Configurations can be counted by the exact minimum position using a difference of counts for lower-bound conditions.",
-    "The second-player winning configurations require all piles to have the same even least significant set-bit position."
+    "A multiset has positive MEX if and only if it contains 0.",
+    "If there are no zeroes, all three MEX values are 0, so the condition is automatically satisfied.",
+    "With exactly one zero, only one multiset can have positive MEX; the other two have MEX 0. Therefore the sum equals the maximum, which cannot be at least twice the maximum when that maximum is positive.",
+    "With at least two zeroes, two different multisets can each obtain MEX 1.",
+    "Once a multiset contains 0, its MEX is at least 1; assigning only one zero to it guarantees its MEX is exactly 1 regardless of which positive values it receives.",
+    "All non-zero elements can be placed in the third multiset without changing its MEX from 0."
   ],
   "reasoning_patterns": [
-    "Replace large numeric states with the smallest structural feature that controls legal moves and transitions.",
-    "Identify a synchronized state in which one operation transforms every component in the same way.",
-    "Classify positions by a decisive minimum and by whether all components attain that minimum.",
-    "Use parity of a decreasing measure to determine which player receives a losing position.",
-    "Prove a draw by exhibiting a strategy that preserves an invariant indefinitely rather than trying to analyze all future states.",
-    "Count objects with an exact minimum by subtracting configurations satisfying successive lower-bound conditions.",
-    "Separate outcome cases structurally before performing combinatorial counting."
+    "Identify a critical value whose presence determines whether the objective can become positive.",
+    "Reduce feasibility to the multiplicity of that critical value rather than analyzing the full value distribution.",
+    "Use extreme-case analysis to prove impossibility when a required resource is insufficient.",
+    "Construct a witness by assigning scarce critical resources to separate groups and placing irrelevant elements arbitrarily.",
+    "Force an exact small MEX by ensuring the critical prefix is partially present: include 0 but do not need to control larger values.",
+    "Compare the total objective with its maximum component to derive structural requirements on how many components must be positive."
   ],
   "questions": [
-    "What minimal feature of each component determines whether a move is possible?",
-    "Can the full state be compressed to a small summary such as a minimum, parity, or rank?",
-    "What happens when all components share the same critical value?",
-    "Can one move synchronize or normalize all components?",
-    "What does fixing the minimum imply about the next state?",
-    "Does the parity of a monotone quantity determine who receives a losing position?",
-    "Can either player preserve a nonterminal invariant forever?",
-    "Can exact-minimum cases be counted as a difference of lower-bound cases?",
-    "Which outcome cases require equality across all components, rather than only a minimum?"
+    "Which smallest value determines whether the objective is zero or positive?",
+    "How many groups must have a positive contribution?",
+    "What resource is needed to make multiple groups positive?",
+    "Can feasibility be characterized by the frequency of one critical value?",
+    "Can I force an exact small value instead of optimizing a larger one?",
+    "Which elements are irrelevant once the critical condition is satisfied?",
+    "What happens in the cases where the critical resource is absent, unique, or repeated?"
   ],
   "skill_path": [
-    "game_theory/state_compression/invariant-based-outcome-classification"
+    "feasibility/frequency-analysis/critical-resource/multiplicity-driven-construction"
   ],
   "probably_related": [
-    "number_theory/bit_properties/least-significant-set-bit",
-    "game_theory/strategy/zugzwang-and-losing-position-identification",
-    "game_theory/draws/infinite-invariant-preservation",
-    "combinatorics/extremal-counting/exact-minimum-by-subtraction",
-    "greedy/strategy-preservation/maintaining-future-feasibility",
-    "parity/monovariants/alternating-outcome-analysis"
+    "greedy/construction/resource-allocation",
+    "invariants/mex/prefix-presence",
+    "case-analysis/extreme-cases/impossibility-proof",
+    "counting/frequency-based-feasibility",
+    "constructive-algorithms/exact-target-forcing"
   ]
 }

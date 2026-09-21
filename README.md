@@ -7,6 +7,16 @@ python main.py test
 python main.py test --provider copilot
 ```
 
+Preview a proposed new skill or extension without writing under `skills/`:
+
+```powershell
+python main.py test --review
+python main.py test --provider copilot --review
+```
+
+Review mode prints a unified Markdown diff. Rerun the same command without
+`--review` to create a new skill; existing skills are never edited automatically.
+
 Evaluate reuse decisions without creating or changing any skill files:
 
 ```powershell

@@ -1,9 +1,16 @@
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
-from main import ask_existing_skill_match, extract_json_response
+from main import (
+    SKILLS_DIR,
+    ask_existing_skill_match,
+    extract_json_response,
+    process_skill,
+)
 from skill_search import load_skill_documents, rank_candidates
 
 
@@ -62,6 +69,49 @@ class SkillSearchTests(unittest.TestCase):
         self.assertEqual(decision, "REUSE")
         self.assertIsNotNone(existing)
         self.assertIsInstance(run.call_args.kwargs["input"], str)
+
+    @patch("main.ask_existing_skill_match")
+    def test_review_mode_previews_without_creating_a_skill(self, match) -> None:
+        match.return_value = ("CREATE_NEW", None, "No match.")
+        analysis = {
+            "skill_path": ["__review_test__/preview_only"],
+            "questions": ["Can I find an invariant?"],
+            "key_observations": ["The state can be compressed."],
+            "reasoning_patterns": ["Preserve the useful invariant."],
+            "probably_related": [],
+        }
+        target = SKILLS_DIR / "__review_test__" / "preview_only.md"
+        self.assertFalse(target.exists())
+
+        output = StringIO()
+        with redirect_stdout(output):
+            process_skill(analysis, "codex", review=True)
+
+        self.assertFalse(target.exists())
+        self.assertIn("New-skill preview (not written)", output.getvalue())
+        self.assertIn("+++ skills/__review_test__/preview_only.md", output.getvalue())
+
+    @patch("main.draft_skill_extension")
+    @patch("main.ask_existing_skill_match")
+    def test_review_mode_previews_an_extension_without_writing(
+        self,
+        match,
+        draft,
+    ) -> None:
+        candidate = load_skill_documents(SKILLS_DIR)[0]
+        existing = candidate.path
+        before = existing.read_text(encoding="utf-8")
+        match.return_value = ("EXTEND", existing, "Related technique.")
+        draft.return_value = before + "\n## Extra Insight\n\n- New reusable detail.\n"
+        analysis = {"skill_path": ["__review_test__/extension_preview"]}
+
+        output = StringIO()
+        with redirect_stdout(output):
+            process_skill(analysis, "codex", review=True)
+
+        self.assertEqual(existing.read_text(encoding="utf-8"), before)
+        self.assertIn("Extension preview (not written)", output.getvalue())
+        self.assertIn("+## Extra Insight", output.getvalue())
 
 
 if __name__ == "__main__":

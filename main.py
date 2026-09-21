@@ -1,4 +1,5 @@
 import argparse
+import difflib
 import json
 import os
 import re
@@ -323,15 +324,9 @@ If you choose CREATE_NEW, path must be null.
         output_file.unlink(missing_ok=True)
 
 
-def create_skill(analysis: dict) -> Path:
-    skill_file = get_skill_path(analysis)
-
-    skill_file.parent.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-
-    content = (
+def skill_content(analysis: dict, skill_file: Path) -> str:
+    """Build the Markdown content for a newly proposed skill."""
+    return (
         f"# {skill_file.stem.replace('_', ' ').title()}\n\n"
 
         "## Questions\n\n"
@@ -369,15 +364,104 @@ def create_skill(analysis: dict) -> Path:
         + "\n"
     )
 
+
+def create_skill(analysis: dict) -> Path:
+    skill_file = get_skill_path(analysis)
+
+    skill_file.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
     skill_file.write_text(
-        content,
+        skill_content(analysis, skill_file),
         encoding="utf-8",
     )
 
     return skill_file
 
 
-def process_skill(analysis: dict, provider: str) -> None:
+def strip_markdown_fence(content: str) -> str:
+    content = content.strip()
+    fenced = re.fullmatch(r"```(?:markdown|md)?\s*(.*?)\s*```", content, re.DOTALL)
+    return (fenced.group(1) if fenced else content).rstrip() + "\n"
+
+
+def draft_skill_extension(analysis: dict, skill_file: Path, provider: str) -> str | None:
+    """Ask the selected provider for a full revised skill, without writing it."""
+    existing_content = skill_file.read_text(encoding="utf-8")
+    prompt = f"""Improve an existing competitive-programming skill with useful,
+non-duplicative insights from a newly analyzed problem.
+
+EXISTING SKILL PATH: {skill_file.relative_to(SKILLS_DIR).as_posix()}
+EXISTING SKILL:
+{existing_content}
+
+NEW ANALYSIS:
+{json.dumps(analysis, indent=2, ensure_ascii=False)}
+
+Return the complete revised Markdown skill. Preserve helpful existing material,
+add only reusable insights missing from it, and return Markdown only. Do not use tools.
+"""
+
+    try:
+        if provider == "codex":
+            with tempfile.NamedTemporaryFile(
+                prefix="skill-extension-",
+                suffix=".md",
+                dir=ROOT,
+                delete=False,
+            ) as handle:
+                output_file = Path(handle.name)
+            try:
+                subprocess.run(
+                    [
+                        "codex",
+                        "exec",
+                        "--sandbox",
+                        "read-only",
+                        "-o",
+                        str(output_file),
+                        prompt,
+                    ],
+                    cwd=ROOT,
+                    check=True,
+                )
+                return strip_markdown_fence(output_file.read_text(encoding="utf-8"))
+            finally:
+                output_file.unlink(missing_ok=True)
+
+        completed = subprocess.run(
+            [
+                find_cli("copilot"),
+                "--silent",
+                "--no-ask-user",
+                "--output-format=text",
+            ],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+            input=prompt,
+        )
+        return strip_markdown_fence(completed.stdout)
+    except (FileNotFoundError, subprocess.CalledProcessError, OSError):
+        print("WARNING: Could not draft an extension preview.")
+        return None
+
+
+def print_diff(before: str, after: str, from_file: str, to_file: str) -> None:
+    diff = difflib.unified_diff(
+        before.splitlines(keepends=True),
+        after.splitlines(keepends=True),
+        fromfile=from_file,
+        tofile=to_file,
+    )
+    rendered = "".join(diff)
+    print(rendered if rendered else "(No content changes proposed.)")
+
+
+def process_skill(analysis: dict, provider: str, review: bool = False) -> None:
     skill_file = get_skill_path(analysis)
 
     print()
@@ -385,7 +469,7 @@ def process_skill(analysis: dict, provider: str) -> None:
     print("----------------")
 
     if skill_file.exists():
-        print("EXISTING SKILL")
+        print("REUSE EXISTING SKILL")
         print(skill_file)
         return
 
@@ -395,10 +479,34 @@ def process_skill(analysis: dict, provider: str) -> None:
         print(existing)
         if reason:
             print(f"Reason: {reason}")
+        if review and decision == "EXTEND":
+            proposal = draft_skill_extension(analysis, existing, provider)
+            if proposal is not None:
+                print()
+                print("Extension preview (not written)")
+                print("-------------------------------")
+                print_diff(
+                    existing.read_text(encoding="utf-8"),
+                    proposal,
+                    existing.relative_to(ROOT).as_posix(),
+                    existing.relative_to(ROOT).as_posix(),
+                )
         return
 
-    print("NEW SKILL")
+    print("CREATE NEW SKILL")
     print(skill_file)
+
+    if review:
+        print()
+        print("New-skill preview (not written)")
+        print("------------------------------")
+        print_diff(
+            "",
+            skill_content(analysis, skill_file),
+            "/dev/null",
+            skill_file.relative_to(ROOT).as_posix(),
+        )
+        return
 
     created = create_skill(analysis)
 
@@ -417,6 +525,11 @@ def main() -> None:
         choices=("codex", "copilot"),
         default="codex",
         help="AI CLI to use (default: codex).",
+    )
+    parser.add_argument(
+        "--review",
+        action="store_true",
+        help="Preview the proposed skill change without writing under skills/.",
     )
     args = parser.parse_args()
 
@@ -455,7 +568,7 @@ def main() -> None:
     print("Analysis saved to:")
     print(f"  {output_file}")
 
-    process_skill(analysis, args.provider)
+    process_skill(analysis, args.provider, args.review)
 
 
 if __name__ == "__main__":

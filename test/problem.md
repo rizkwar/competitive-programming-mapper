@@ -1,24 +1,30 @@
-## Description
+## D. MEX Multiset
 
-Pak Chanek is competing in an annual strategy-game tournament in Chaneknesia. In the preliminary round, he is randomly paired with Galih, a fellow competitor he has just met at the venue. The game they are about to play uses $N$ piles of stones, where pile $i$ initially has $a_i$ stones. The two players take turns, and since Pak Chanek registered first, he always gets the first turn.
+**time limit per test:** 2 seconds  
+**memory limit per test:** 256 megabytes  
 
-On a turn, a player must choose a pile index $i$ ($1 \le i \le N$) such that the number of stones in pile $i$ is even. After the player chooses index $i$, the piles change as follows:
+You are given an array $a_1, a_2, \ldots, a_n$. There exist $3$ initially empty multisets $A, B, C$, and for each index $i$ ($1 \le i \le n$), you may put $a_i$ into exactly one of $A$, $B$, or $C$.
 
-* The number of stones in pile $i$ is halved (becoming $\frac{a_i}{2}$).
-* For every other pile $j$ ($j \neq i$), the number of stones increases by $\frac{a_i}{2}$ (becoming $a_j + \frac{a_i}{2}$).
+Determine whether it is possible to put the elements into the multisets such that $\text{MEX}(A) + \text{MEX}(B) + \text{MEX}(C) \ge 2 \cdot \max(\text{MEX}(A), \text{MEX}(B), \text{MEX}(C))^*$. If so, output a construction that achieves this.
 
-A player who has no valid move on their turn (that is, when every pile has an odd number of stones) is declared the loser. If after $10^{100}$ moves the game still has not ended (neither player has lost), the game is declared a draw.
+$^*$ $\text{MEX}(D)$ is defined as the smallest non-negative integer that is not present in the set $D$. For example, $\text{MEX}([1, 2, 0, 5]) = 3$, and $\text{MEX}([1, 2, 4, 9]) = 0$. The $\text{MEX}$ of an empty set is $0$.
 
-While waiting for the match to begin, Pak Chanek grows curious: out of every possible starting configuration, how many would make him win, how many would make Galih win, and how many would end in a draw?
+### Input
 
-You are given two integers, $N$ and $K$. There are $2^K - 1$ possible values for each $a_i$, namely the range $1 \le a_i < 2^K$. Considering every possible starting value for the array $a$ of length $N$, count, respectively, how many initial configurations result in:
+The first line of each input contains $t$ ($1 \le t \le 10^4$) — the number of test cases.
 
-1. Pak Chanek winning for certain.
-2. Galih winning for certain.
-3. The game ending in a draw.
+The first line of each test case contains $n$ ($3 \le n \le 2 \cdot 10^5$) — the length of $a$.
 
-Since the answer can be very large, output all three answers modulo $998\ 422\ 353$. Assume both players always play optimally to win, or to force a draw if they cannot win.
+The second line of each test case contains $a_1, a_2, \ldots, a_n$ ($0 \le a_i \le 10^9$) — the array $a$.
 
-## Constraints
+It is guaranteed that the sum of $n$ over all test cases does not exceed $2 \cdot 10^5$.
 
-* $1 \le N, K \le 100\ 000$
+### Output
+
+If a valid distribution of elements into the multisets exists, output `YES`. Otherwise, output `NO`.
+
+If the answer is `YES`, output a string $s$ of length $n$ on a new line, such that $s_i = \text{A}$ if the $i$-th element was put into the multiset $A$, $s_i = \text{B}$ if the $i$-th element was put into the multiset $B$, and $s_i = \text{C}$ if the $i$-th element was put into the multiset $C$.
+
+You can output the answer in any case (upper or lower). For example, the strings `YES`, `yes`, `yEs`, and `Yes` will be recognized as positive responses, and the strings `NO`, `no`, `No` will be recognized as negative responses. Additionally, the strings `AABCAAA`, `aabcaaa`, and `aaBcaaa` will be recognized as the same answer.
+
+If there are multiple possible outputs, output any.
