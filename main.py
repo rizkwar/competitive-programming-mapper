@@ -498,19 +498,14 @@ If you choose CREATE_NEW, path must be null.
 
 
 def skill_content(analysis: dict, skill_file: Path) -> str:
-    """Build the Markdown content for a newly proposed skill."""
+    """Build a reusable thinking guide, not a problem-specific solution note."""
     questions = _string_list(analysis.get("questions", []))
     signals = _string_list(analysis.get("signals", []))
-    observations = _string_list(analysis.get("key_observations", []))
     patterns = _string_list(analysis.get("reasoning_patterns", []))
     related = _string_list(analysis.get("probably_related", []))
 
     return (
         f"# {skill_file.stem.replace('_', ' ').title()}\n\n"
-
-        "## Core Idea\n\n"
-        + analysis.get("core_idea", "").strip()
-        + "\n\n"
 
         "## Signals\n\n"
         + "\n".join(f"- {signal}" for signal in signals)
@@ -518,10 +513,6 @@ def skill_content(analysis: dict, skill_file: Path) -> str:
 
         "## Questions\n\n"
         + "\n".join(f"- {question}" for question in questions)
-        + "\n\n"
-
-        "## Key Observations\n\n"
-        + "\n".join(f"- {observation}" for observation in observations)
         + "\n\n"
 
         "## Reasoning Patterns\n\n"

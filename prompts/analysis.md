@@ -10,12 +10,15 @@ Do NOT simply summarize the solution.
 ## core_idea
 
 Describe the central idea of the solution in 1-3 sentences.
+This is internal analysis only and will not be copied into the final skill note.
 
 ## key_observations
 
 List the important observations that lead toward the solution.
 
 These should explain WHY the solution becomes possible.
+Use them as evidence for extracting general patterns. Do not phrase them as
+problem-specific facts in the final reusable skill.
 
 ## reasoning_patterns
 
@@ -33,6 +36,8 @@ For example:
 - compressing DP state
 
 Avoid problem-specific implementation details.
+The final skill note is built from the reusable fields only. Do not include
+problem names, exact values, variable names, formulas, or one-off entities.
 
 ## questions
 
@@ -101,6 +106,16 @@ main skill.
 These may belong to completely different branches.
 
 Return paths only.
+
+The final skill note should contain only:
+
+- signals
+- questions
+- reasoning_patterns
+- probably_related
+
+Do not emit a solution summary, core idea paragraph, key-observation list, or
+implementation walkthrough as part of the reusable note.
 
 ## Important
 

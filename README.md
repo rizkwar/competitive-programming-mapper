@@ -192,12 +192,15 @@ skills/
 
 Generated notes contain:
 
-- Core Idea
 - Signals
 - Questions
-- Key Observations
 - Reasoning Patterns
 - Probably Related
+
+The analysis may contain a core idea and key observations internally, but those
+fields are deliberately not copied into skill files. This keeps the library
+focused on reusable problem-solving thought processes instead of editorial
+summaries or problem-specific facts.
 
 The taxonomy path is validated to reject traversal, invalid names, and
 implementation-oriented terms such as `precompute`, `iterate`, and `loop`.

@@ -160,9 +160,11 @@ class SkillSearchTests(unittest.TestCase):
         self.assertFalse(target.exists())
         self.assertIn("New-skill preview (not written)", output.getvalue())
         self.assertIn("+++ skills/__review_test__/preview_only.md", output.getvalue())
-        self.assertIn("## Core Idea", output.getvalue())
         self.assertIn("## Signals", output.getvalue())
         self.assertIn("A small statistic controls feasibility.", output.getvalue())
+        self.assertNotIn("## Core Idea", output.getvalue())
+        self.assertNotIn("## Key Observations", output.getvalue())
+        self.assertNotIn("Compress the state to its decisive invariant.", output.getvalue())
 
     @patch("main.draft_skill_extension")
     @patch("main.ask_existing_skill_match")

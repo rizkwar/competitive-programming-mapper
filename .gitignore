@@ -27,6 +27,7 @@ evaluation_results/
 
 # Generated analysis output inside problem folders
 Problems/*/analysis.json
+Problems
 
 # Repository-local skill drafts and generated skill content
 skills/
