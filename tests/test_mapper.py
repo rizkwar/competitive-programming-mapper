@@ -13,6 +13,7 @@ from main import (
     process_skill,
     validate_analysis_response,
     validate_match_response,
+    normalize_skill_path_parts,
     validate_skill_path_parts,
 )
 from skill_search import load_skill_documents, rank_candidates
@@ -78,6 +79,18 @@ class SkillSearchTests(unittest.TestCase):
     def test_skill_path_rejects_invalid_segment_format(self) -> None:
         with self.assertRaisesRegex(ValueError, "lowercase"):
             validate_skill_path_parts(["Greedy Ideas"])
+
+    def test_skill_path_normalizes_phrase_labels_and_broad_category(self) -> None:
+        self.assertEqual(
+            normalize_skill_path_parts(
+                [
+                    "greedy optimization",
+                    "successor structures",
+                    "binary lifting",
+                ]
+            ),
+            ["greedy", "successor-structures", "binary-lifting"],
+        )
 
     def test_analysis_response_requires_all_schema_fields(self) -> None:
         with self.assertRaisesRegex(ValueError, "missing required"):

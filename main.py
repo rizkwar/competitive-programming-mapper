@@ -20,6 +20,27 @@ from skill_search import (
 ROOT = Path(__file__).resolve().parent
 PROBLEMS_DIR = ROOT / "Problems"
 SKILL_SEGMENT_RE = re.compile(r"^[a-z0-9_][a-z0-9_-]*$")
+TAXONOMY_WORD_RE = re.compile(r"[^a-z0-9_-]+")
+KNOWN_BROAD_CATEGORIES = {
+    "binary-search",
+    "counting",
+    "construction",
+    "data-structures",
+    "dp",
+    "dynamic-programming",
+    "feasibility",
+    "geometry",
+    "graph",
+    "graphs",
+    "greedy",
+    "math",
+    "number-theory",
+    "optimization",
+    "search",
+    "sorting",
+    "strings",
+    "trees",
+}
 IMPLEMENTATION_PATH_TERMS = {
     "calculate",
     "complexity",
@@ -298,7 +319,17 @@ def load_analysis(output_file: Path, provider: str) -> dict:
     )
 
     try:
-        return validate_analysis_response(data)
+        data = validate_analysis_response(data)
+        data["skill_path"] = normalize_skill_path_parts(
+            _flatten_skill_path_items(data["skill_path"])
+        )
+        if not data["skill_path"]:
+            raise ValueError("AI response field 'skill_path' must contain a valid path.")
+        output_file.write_text(
+            json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        return data
     except ValueError as error:
         print(f"ERROR: {provider.title()} returned invalid analysis JSON.")
         print(f"  {error}")
@@ -320,6 +351,22 @@ def _flatten_skill_path_items(value: object) -> list[str]:
     cleaned = text.replace("\\", "/")
     parts = [part.strip() for part in cleaned.split("/") if part.strip()]
     return parts
+
+
+def normalize_skill_path_parts(parts: list[str]) -> list[str]:
+    """Convert AI path labels into one lowercase, taxonomy-safe segment each."""
+    normalized: list[str] = []
+    for part in parts:
+        words = [word for word in TAXONOMY_WORD_RE.split(part.lower()) if word]
+        if not words:
+            continue
+        candidate = "-".join(words)
+        normalized.append(candidate)
+
+    if normalized and normalized[0].split("-")[0] in KNOWN_BROAD_CATEGORIES:
+        normalized[0] = normalized[0].split("-")[0]
+
+    return normalized
 
 
 def validate_skill_path_parts(parts: list[str]) -> None:
@@ -357,6 +404,10 @@ def _string_list(value: object) -> list[str]:
 def get_skill_path(analysis: dict) -> Path:
     payload = analysis.get("skill_path", [])
     raw_parts = _flatten_skill_path_items(payload)
+    if any(part in {".", ".."} for part in raw_parts):
+        print("ERROR: Invalid skill path: Skill paths cannot contain '.' or '..'.")
+        sys.exit(1)
+    raw_parts = normalize_skill_path_parts(raw_parts)
     if not raw_parts:
         print("ERROR: Empty skill path.")
         sys.exit(1)

@@ -86,6 +86,12 @@ For example:
 
 construction/prefix/greedy/lexicographic/smallest_safe_next_element
 
+Return each hierarchy level as one lowercase taxonomy segment. Use hyphens or
+underscores inside a segment, never spaces. The first segment must be a broad
+category such as `greedy`, `graphs`, `counting`, `construction`, `dp`, or
+`strings`; do not combine a broad category with a modifier such as
+`greedy-optimization`.
+
 DO NOT put these in the path:
 
 - implementation steps
