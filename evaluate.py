@@ -32,7 +32,12 @@ def relative_skill_path(skill_file: Path | None) -> str | None:
 def evaluate_case(case: dict, provider: str, results_dir: Path) -> dict:
     """Run one case through analysis and matching, but never create a skill."""
     case_id = case["id"]
-    problem_dir = (ROOT / case["problem_dir"]).resolve()
+    configured_path = Path(case["problem_dir"])
+    problem_dir = (
+        configured_path
+        if configured_path.is_absolute()
+        else (ROOT / configured_path).resolve()
+    )
     validate_files(problem_dir)
 
     case_dir = results_dir / provider / case_id

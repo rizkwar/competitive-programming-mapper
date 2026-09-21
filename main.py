@@ -18,6 +18,7 @@ from skill_search import (
 
 
 ROOT = Path(__file__).resolve().parent
+PROBLEMS_DIR = ROOT / "Problems"
 SKILL_SEGMENT_RE = re.compile(r"^[a-z0-9_][a-z0-9_-]*$")
 IMPLEMENTATION_PATH_TERMS = {
     "calculate",
@@ -58,6 +59,15 @@ def validate_files(problem_dir: Path) -> None:
             print("ERROR: Missing file:")
             print(f"  {file}")
             sys.exit(1)
+
+
+def resolve_problem_directory(value: str) -> Path:
+    """Resolve a direct path or a named problem inside the Problems directory."""
+    requested = Path(value)
+    if requested.exists():
+        return requested.resolve()
+
+    return (PROBLEMS_DIR / value).resolve()
 
 
 def extract_json_response(response: str) -> dict:
@@ -718,7 +728,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    problem_dir = Path(args.problem_directory).resolve()
+    problem_dir = resolve_problem_directory(args.problem_directory)
 
     if not problem_dir.exists():
         print("ERROR: Directory does not exist:")

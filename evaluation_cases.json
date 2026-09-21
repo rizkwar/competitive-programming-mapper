@@ -2,7 +2,7 @@
   "cases": [
     {
       "id": "minimum-valuation-game",
-      "problem_dir": "test",
+      "problem_dir": "Problems/mex-multiset",
       "expected": {
         "decision": "REUSE",
         "path": "game_theory/invariants/valuation_analysis/minimum_level_parity_classification"
