@@ -1,1 +1,29 @@
+# Generated Python files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Local Python environments
+.venv/
+venv/
+env/
+ENV/
+
+# Local tooling and editor files
+.vscode/
+.idea/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local environment and log files
+.env
+.env.*
+*.log
+
+# Repository-local skill drafts and generated skill content
 skills/
+
+# Operating-system metadata
+.DS_Store
+Thumbs.db
