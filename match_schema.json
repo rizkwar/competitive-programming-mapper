@@ -1,0 +1,17 @@
+{
+  "type": "object",
+  "properties": {
+    "decision": {
+      "type": "string",
+      "enum": ["REUSE", "EXTEND", "CREATE_NEW"]
+    },
+    "path": {
+      "type": ["string", "null"]
+    },
+    "reason": {
+      "type": "string"
+    }
+  },
+  "required": ["decision", "path", "reason"],
+  "additionalProperties": false
+}

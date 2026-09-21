@@ -1,13 +1,22 @@
 import json
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
+
+from skill_search import (
+    analysis_query,
+    candidate_context,
+    load_skill_documents,
+    rank_candidates,
+)
 
 
 ROOT = Path(__file__).resolve().parent
 
 PROMPT_FILE = ROOT / "prompt.md"
 SCHEMA_FILE = ROOT / "schema.json"
+MATCH_SCHEMA_FILE = ROOT / "match_schema.json"
 SKILLS_DIR = ROOT / "skills"
 
 
@@ -15,6 +24,7 @@ def validate_files(problem_dir: Path) -> None:
     required_files = [
         PROMPT_FILE,
         SCHEMA_FILE,
+        MATCH_SCHEMA_FILE,
         problem_dir / "problem.md",
         problem_dir / "solution.md",
     ]
@@ -117,6 +127,85 @@ def get_skill_path(analysis: dict) -> Path:
     return skill_file
 
 
+def get_existing_skill_path(relative_path: str) -> Path | None:
+    """Resolve a model-selected skill path, rejecting traversal and non-files."""
+    candidate = (SKILLS_DIR / relative_path.strip("/\\")).resolve()
+    try:
+        candidate.relative_to(SKILLS_DIR.resolve())
+    except ValueError:
+        return None
+    if candidate.suffix.lower() != ".md":
+        candidate = candidate.with_suffix(".md")
+    return candidate if candidate.is_file() else None
+
+
+def ask_existing_skill_match(analysis: dict) -> tuple[str, Path | None, str]:
+    """Ask Codex whether a retrieved existing skill should be reused."""
+    candidates = rank_candidates(
+        analysis,
+        load_skill_documents(SKILLS_DIR),
+    )
+    if not candidates:
+        return "CREATE_NEW", None, "No existing skills were retrieved."
+
+    prompt = f"""You are deciding whether a newly analyzed competitive-programming skill already exists.
+
+NEW ANALYSIS:
+{analysis_query(analysis)}
+
+EXISTING SKILL CANDIDATES:
+{candidate_context(candidates)}
+
+Return REUSE if a candidate teaches essentially the same reusable technique,
+EXTEND if one candidate is the right skill but would need additional coverage,
+or CREATE_NEW if none is semantically equivalent.
+If you choose REUSE or EXTEND, path must be exactly one candidate PATH.
+If you choose CREATE_NEW, path must be null.
+"""
+
+    with tempfile.NamedTemporaryFile(
+        prefix="skill-match-",
+        suffix=".json",
+        dir=ROOT,
+        delete=False,
+    ) as handle:
+        output_file = Path(handle.name)
+
+    try:
+        try:
+            subprocess.run(
+                [
+                    "codex",
+                    "exec",
+                    "--sandbox",
+                    "read-only",
+                    "--output-schema",
+                    str(MATCH_SCHEMA_FILE),
+                    "-o",
+                    str(output_file),
+                    prompt,
+                ],
+                cwd=ROOT,
+                check=True,
+            )
+            result = json.loads(output_file.read_text(encoding="utf-8"))
+        except (FileNotFoundError, subprocess.CalledProcessError, json.JSONDecodeError):
+            print("WARNING: Existing-skill matching failed; continuing with new-skill detection.")
+            return "CREATE_NEW", None, "Matcher failed."
+
+        decision = result.get("decision")
+        selected = get_existing_skill_path(str(result.get("path") or ""))
+        candidate_paths = {candidate.relative_path for candidate in candidates}
+        selected_relative = selected.relative_to(SKILLS_DIR).with_suffix("").as_posix() if selected else None
+        if decision in {"REUSE", "EXTEND"} and selected_relative in candidate_paths:
+            return decision, selected, str(result.get("reason", ""))
+        if decision == "CREATE_NEW":
+            return decision, None, str(result.get("reason", ""))
+        return "CREATE_NEW", None, "Matcher returned an invalid candidate path."
+    finally:
+        output_file.unlink(missing_ok=True)
+
+
 def create_skill(analysis: dict) -> Path:
     skill_file = get_skill_path(analysis)
 
@@ -181,6 +270,14 @@ def process_skill(analysis: dict) -> None:
     if skill_file.exists():
         print("EXISTING SKILL")
         print(skill_file)
+        return
+
+    decision, existing, reason = ask_existing_skill_match(analysis)
+    if existing is not None:
+        print(f"{decision} EXISTING SKILL")
+        print(existing)
+        if reason:
+            print(f"Reason: {reason}")
         return
 
     print("NEW SKILL")

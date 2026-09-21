@@ -1,40 +1,37 @@
 {
-  "core_idea": "Replace each pile value by its 2-adic valuation, the position of its least significant set bit. The game's outcome is controlled by the minimum valuation: an odd minimum is winning, an even minimum with all valuations equal is losing, and an even minimum with mixed valuations allows an infinite draw-preserving strategy.",
+  "core_idea": "Classify each game state by the minimum 2-adic valuation (the position of the least significant set bit) among piles. Its parity, together with whether every pile attains that minimum, determines a forced win, loss, or indefinitely maintainable draw; then count initial arrays by their exact minimum valuation.",
   "key_observations": [
-    "A pile is playable exactly when its least significant set bit position is greater than 0; the game ends when all positions are 0.",
-    "If all piles have the same positive least-significant-bit position c, then any move decreases every pile's position to c-1.",
-    "The minimum least-significant-bit position m is the decisive invariant-like quantity for classifying positions.",
-    "When m is odd, choosing a pile attaining the minimum forces all piles to m-1, giving the opponent an even equal-minimum losing structure.",
-    "When m is even and all piles attain m, any move gives the opponent an odd equal state, so the current player loses.",
-    "When m is even but not all piles attain m, players can keep choosing piles above the minimum, preserving both a minimum pile and a larger pile, so neither player is forced to end the game.",
-    "Counting configurations becomes counting arrays by the exact minimum of lsb values and, separately, arrays where all values have the same exact even lsb."
+    "The move rule is governed by divisibility by powers of two, so full pile values can be compressed to their least-significant-set-bit positions.",
+    "If every pile has the same positive valuation c, any move makes every valuation exactly c-1.",
+    "When the minimum valuation is odd, moving a pile at that minimum synchronizes all piles at the next lower, even valuation, creating a losing state for the opponent.",
+    "When the minimum valuation is even and shared by all piles, every possible move gives the opponent the corresponding odd-minimum winning state.",
+    "When an even minimum is not shared by all piles, a player can move a pile strictly above the minimum while preserving both a minimum-level pile and a higher-level pile; this prevents termination forever.",
+    "Arrays with exact minimum valuation i can be counted by subtracting arrays whose valuations are all at least i+1 from those whose valuations are all at least i.",
+    "The losing-player configurations require a stricter condition than a fixed minimum: every element must have exactly the same even valuation."
   ],
   "reasoning_patterns": [
-    "Project numeric game states onto a smaller invariant that captures legal moves and outcome-relevant behavior.",
-    "Classify impartial game positions by structural cases instead of computing Grundy values when the transition has strong regularity.",
-    "Analyze what a move does to extrema, especially the minimum, rather than tracking every value.",
-    "Identify equal-state collapse: when all components share a key value, one move transforms the whole state uniformly.",
-    "Separate winning, losing, and drawing positions by whether a player can force progress or preserve a nonterminal invariant indefinitely.",
-    "Count outcomes by fixing an exact minimum and subtracting configurations with a larger minimum.",
-    "Use complement counting for the remaining category after disjoint winning and losing cases are counted."
+    "Reduce numerical game states to the smallest valuation or other operation-relevant invariant.",
+    "Classify impartial-game positions using a compact state signature and parity.",
+    "Use a synchronizing move that collapses many components to a uniform next state.",
+    "Prove draws by exhibiting a closed set of nonterminal states that each player can preserve.",
+    "Count objects by exact minimum via the difference of two cumulative counts.",
+    "Separate a special uniform case from the general minimum-based classification."
   ],
   "questions": [
-    "What simplified feature of each value determines whether a move is legal?",
-    "Is there an extremal value that controls the whole state?",
-    "What happens when all components share the same key feature?",
-    "Can I classify positions by the parity or category of an invariant?",
-    "Can a player preserve a nonterminal structure forever?",
-    "Can I count configurations by fixing the exact minimum?",
-    "After counting the decisive cases, can the rest be obtained by complement?"
+    "What divisibility information does every move actually depend on?",
+    "Can the state be compressed to a valuation or minimum invariant?",
+    "What happens if all components share the same critical value?",
+    "Can I move at the minimum to force a canonical next state?",
+    "Is there a nonterminal state family that both players can preserve forever?",
+    "Can configurations with an exact minimum be counted by subtracting cumulative cases?"
   ],
   "skill_path": [
-    "games/invariants/minimum_classification/draw_preserving_extremal_state"
+    "game_theory/impartial_games/invariants/2_adic_valuation_state_classification"
   ],
   "probably_related": [
-    "number_theory/bit_properties/least_significant_bit/valuation_reduction",
-    "games/state_compression/outcome_classification/structural_cases",
-    "counting/exact_extremum/subtract_larger_threshold",
-    "counting/complement/disjoint_outcome_partition",
-    "strategy/invariant_preservation/infinite_play_draw"
+    "number_theory/binary_representation/least_significant_set_bit",
+    "combinatorics/counting_by_extremum/cumulative_subtraction",
+    "game_theory/draws/closed_nonterminal_state_invariant",
+    "game_theory/impartial_games/parity_based_position_classification"
   ]
 }
