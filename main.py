@@ -96,7 +96,7 @@ def get_skill_path(analysis: dict) -> Path:
     return SKILLS_DIR / f"{skill_path}.md"
 
 
-def check_skill(analysis: dict) -> None:
+def process_skill(analysis: dict) -> None:
     skill_file = get_skill_path(analysis)
 
     print()
@@ -106,10 +106,37 @@ def check_skill(analysis: dict) -> None:
     if skill_file.exists():
         print("EXISTING SKILL")
         print(skill_file)
-    else:
-        print("NEW SKILL")
-        print(skill_file)
+        return
 
+    print("NEW SKILL")
+    print(skill_file)
+
+    created = create_skill(analysis)
+
+    print()
+    print("Created skill:")
+    print(created)
+
+def create_skill(analysis: dict) -> Path:
+    skill_file = get_skill_path(analysis)
+
+    skill_file.parent.mkdir(parents=True, exist_ok=True)
+
+    skill_file.write_text(
+        f"# {skill_file.stem.replace('_', ' ').title()}\n\n"
+        "## Questions\n\n"
+        + "\n".join(f"- {q}" for q in analysis["questions"])
+        + "\n\n"
+        "## Signals\n\n"
+        + "\n".join(f"- {s}" for s in analysis["signals"])
+        + "\n\n"
+        "## Probably Related\n\n"
+        + "\n".join(f"- {r}" for r in analysis["probably_related"])
+        + "\n",
+        encoding="utf-8",
+    )
+
+    return skill_file
 
 def main() -> None:
     if len(sys.argv) != 2:
@@ -144,7 +171,7 @@ def main() -> None:
     print("Analysis saved to:")
     print(f"  {output_file}")
 
-    check_skill(analysis)
+    process_skill(analysis)
 
 
 if __name__ == "__main__":

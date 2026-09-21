@@ -1,37 +1,39 @@
 {
-  "core_idea": "Classify each pile only by the position of its least significant set bit. The minimum such position determines whether a player can force the game into a uniform lower layer, while even-minimum mixed states can be maintained forever, leading to a draw.",
+  "core_idea": "Model each pile only by the exponent of 2 dividing it, then classify positions by the minimum such exponent. Odd minimum gives the first player a move to a losing even state; even minimum with all piles tied is losing for the first player; even minimum with a larger pile present can be perpetually maintained as a draw.",
   "key_observations": [
-    "A terminal state is exactly when every pile has least significant bit position 0, because all piles are odd.",
-    "If all piles have the same least significant bit position c > 0, any move decreases every pile's position to c - 1.",
-    "Choosing a pile whose least significant bit equals the current minimum makes all piles collapse to one common lower position.",
-    "The parity of the minimum least-significant-bit position determines whether collapsing the state gives the opponent a losing or winning layer.",
-    "When the minimum is even but not all piles attain it, players can avoid collapse by repeatedly choosing a pile above the minimum, preserving a mixed state and forcing a draw.",
-    "Counting configurations can be done by fixing the exact minimum least-significant-bit position, using counts of numbers divisible by powers of two."
+    "A move is possible exactly when some pile has positive 2-adic valuation, and the game ends when all valuations are 0.",
+    "When all piles have the same valuation c > 0, any move decreases every pile's valuation to c - 1.",
+    "If a pile with the current minimum valuation is chosen, all piles can collapse to that minimum-minus-one level.",
+    "The parity of the minimum valuation determines whether collapsing the game hands the opponent a winning or losing synchronized state.",
+    "When the minimum valuation is even but not shared by all piles, choosing a pile above the minimum preserves both a minimum pile and a higher-valued pile, so neither player is forced to end the game.",
+    "Counting configurations can be done by fixing the exact minimum valuation, and counting all-equal valuation cases separately."
   ],
   "reasoning_patterns": [
-    "Replace large numeric states with a small invariant that fully controls game behavior.",
-    "Analyze game moves through monotone layers of an invariant rather than raw values.",
-    "Classify impartial game outcomes by identifying forced transitions between canonical state classes.",
-    "Separate decisive states from indefinitely maintainable states to account for draws.",
-    "Count objects by fixing the exact minimum value of a statistic.",
-    "Use cumulative counts and subtraction to count exact-value classes."
+    "Replace large numeric state with the invariant-relevant valuation or rank.",
+    "Classify game states by a small aggregate statistic, such as the minimum, instead of the full configuration.",
+    "Analyze special synchronized states first because transitions become simple and reveal winning/losing parity.",
+    "Use a move that collapses the state to a controlled canonical form.",
+    "For draw games, identify a cycle or maintained invariant that both players can use to avoid losing.",
+    "Count objects by exact minimum using difference of nested counts.",
+    "Separate terminal/winning/losing/drawing classes, then count the remainder by complement."
   ],
   "questions": [
-    "What reduced state information actually affects legal moves and outcomes?",
-    "Is there an invariant or valuation that changes predictably after each move?",
-    "What happens if all components share the same invariant value?",
-    "Can a player force the state into a canonical class?",
-    "Does the parity of a layer or distance to terminal state decide the winner?",
-    "Are there states where both players can preserve non-termination?",
-    "Can I count configurations by fixing the exact minimum of some statistic?"
+    "What part of each number actually affects legal moves and transitions?",
+    "Is there an invariant or monotone statistic that controls the outcome?",
+    "What happens when all components have the same key value?",
+    "Can I move to a canonical state whose outcome is already known?",
+    "Does the parity of a depth, valuation, or distance decide the winner?",
+    "If winning is impossible, can both players preserve a non-terminal condition forever?",
+    "Can I count configurations by fixing the exact minimum?",
+    "Which cases are easier to count directly, and which can be obtained by complement?"
   ],
   "skill_path": [
-    "game_theory/state_compression/invariant_layers/minimum_valuation_classification"
+    "game_theory/invariants/valuation_state_compression/minimum_parity_classification"
   ],
   "probably_related": [
-    "counting/exact_value/minimum_statistic/cumulative_difference",
-    "game_theory/draws/cycle_or_avoidance/maintainable_state",
-    "number_theory/bitwise/adic_valuation/least_significant_bit",
-    "game_theory/canonical_states/parity_layers/forced_transition"
+    "number_theory/adic_valuation/state_abstraction",
+    "game_theory/draw_detection/invariant_preserving_cycle",
+    "combinatorics/counting/exact_minimum_by_nested_difference",
+    "game_theory/canonical_states/synchronized_position_analysis"
   ]
 }
