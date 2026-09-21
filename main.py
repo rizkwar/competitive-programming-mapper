@@ -1,4 +1,8 @@
+import argparse
 import json
+import os
+import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -20,6 +24,16 @@ MATCH_SCHEMA_FILE = ROOT / "match_schema.json"
 SKILLS_DIR = ROOT / "skills"
 
 
+def find_cli(name: str) -> str:
+    """Prefer npm's Windows shim when another launcher shadows it on PATH."""
+    if os.name == "nt" and name == "copilot":
+        npm_cli = Path(os.environ.get("APPDATA", "")) / "npm" / "copilot.cmd"
+        if npm_cli.is_file():
+            return str(npm_cli)
+
+    return shutil.which(name) or name
+
+
 def validate_files(problem_dir: Path) -> None:
     required_files = [
         PROMPT_FILE,
@@ -34,6 +48,22 @@ def validate_files(problem_dir: Path) -> None:
             print("ERROR: Missing file:")
             print(f"  {file}")
             sys.exit(1)
+
+
+def extract_json_response(response: str) -> dict:
+    """Parse a JSON object even when a CLI wraps it in a Markdown fence."""
+    response = response.strip()
+    try:
+        return json.loads(response)
+    except json.JSONDecodeError:
+        fenced = re.search(
+            r"```(?:json)?\s*(\{.*?\})\s*```",
+            response,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if fenced:
+            return json.loads(fenced.group(1))
+        raise
 
 
 def run_codex(problem_dir: Path, output_file: Path) -> None:
@@ -75,17 +105,80 @@ def run_codex(problem_dir: Path, output_file: Path) -> None:
         sys.exit(e.returncode)
 
 
-def load_analysis(output_file: Path) -> dict:
+def run_copilot(problem_dir: Path, output_file: Path) -> None:
+    """Run GitHub Copilot CLI without giving it file or shell permissions."""
+    prompt = f"""Analyze a competitive-programming problem and solution.
+
+TASK INSTRUCTIONS:
+{PROMPT_FILE.read_text(encoding="utf-8")}
+
+REQUIRED JSON SCHEMA:
+{SCHEMA_FILE.read_text(encoding="utf-8")}
+
+PROBLEM:
+{(problem_dir / "problem.md").read_text(encoding="utf-8")}
+
+SOLUTION:
+{(problem_dir / "solution.md").read_text(encoding="utf-8")}
+
+Do not use tools. Return only one JSON object that conforms to the schema.
+"""
+    command = [
+        find_cli("copilot"),
+        "--silent",
+        "--no-ask-user",
+        "--output-format=text",
+    ]
+
+    print("Running GitHub Copilot...")
+    print()
+
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+            input=prompt,
+        )
+        analysis = extract_json_response(completed.stdout)
+        output_file.write_text(
+            json.dumps(analysis, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+    except FileNotFoundError:
+        print("ERROR: 'copilot' was not found in PATH.")
+        print("Install and authenticate GitHub Copilot CLI, then try again.")
+        sys.exit(1)
+    except subprocess.CalledProcessError as error:
+        print("ERROR: GitHub Copilot CLI failed.")
+        if error.stderr:
+            print(error.stderr.strip())
+        sys.exit(error.returncode)
+    except json.JSONDecodeError:
+        print("ERROR: GitHub Copilot did not return valid JSON.")
+        sys.exit(1)
+
+
+def run_analysis(provider: str, problem_dir: Path, output_file: Path) -> None:
+    if provider == "codex":
+        run_codex(problem_dir, output_file)
+    else:
+        run_copilot(problem_dir, output_file)
+
+
+def load_analysis(output_file: Path, provider: str) -> dict:
     try:
         data = json.loads(
             output_file.read_text(encoding="utf-8")
         )
     except FileNotFoundError:
-        print("ERROR: Codex did not create the output file:")
+        print(f"ERROR: {provider.title()} did not create the output file:")
         print(f"  {output_file}")
         sys.exit(1)
     except json.JSONDecodeError as e:
-        print("ERROR: Codex output is not valid JSON.")
+        print(f"ERROR: {provider.title()} output is not valid JSON.")
         print(f"Line {e.lineno}, column {e.colno}: {e.msg}")
         sys.exit(1)
 
@@ -139,8 +232,11 @@ def get_existing_skill_path(relative_path: str) -> Path | None:
     return candidate if candidate.is_file() else None
 
 
-def ask_existing_skill_match(analysis: dict) -> tuple[str, Path | None, str]:
-    """Ask Codex whether a retrieved existing skill should be reused."""
+def ask_existing_skill_match(
+    analysis: dict,
+    provider: str,
+) -> tuple[str, Path | None, str]:
+    """Ask the selected AI provider whether a retrieved skill should be reused."""
     candidates = rank_candidates(
         analysis,
         load_skill_documents(SKILLS_DIR),
@@ -173,22 +269,43 @@ If you choose CREATE_NEW, path must be null.
 
     try:
         try:
-            subprocess.run(
-                [
-                    "codex",
-                    "exec",
-                    "--sandbox",
-                    "read-only",
-                    "--output-schema",
-                    str(MATCH_SCHEMA_FILE),
-                    "-o",
-                    str(output_file),
-                    prompt,
-                ],
-                cwd=ROOT,
-                check=True,
-            )
-            result = json.loads(output_file.read_text(encoding="utf-8"))
+            if provider == "codex":
+                subprocess.run(
+                    [
+                        "codex",
+                        "exec",
+                        "--sandbox",
+                        "read-only",
+                        "--output-schema",
+                        str(MATCH_SCHEMA_FILE),
+                        "-o",
+                        str(output_file),
+                        prompt,
+                    ],
+                    cwd=ROOT,
+                    check=True,
+                )
+                result = json.loads(output_file.read_text(encoding="utf-8"))
+            else:
+                match_prompt = (
+                    f"{prompt}\n\nREQUIRED JSON SCHEMA:\n"
+                    f"{MATCH_SCHEMA_FILE.read_text(encoding='utf-8')}\n"
+                    "Do not use tools. Return only one JSON object."
+                )
+                completed = subprocess.run(
+                    [
+                        find_cli("copilot"),
+                        "--silent",
+                        "--no-ask-user",
+                        "--output-format=text",
+                    ],
+                    cwd=ROOT,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    input=match_prompt,
+                )
+                result = extract_json_response(completed.stdout)
         except (FileNotFoundError, subprocess.CalledProcessError, json.JSONDecodeError):
             print("WARNING: Existing-skill matching failed; continuing with new-skill detection.")
             return "CREATE_NEW", None, "Matcher failed."
@@ -260,7 +377,7 @@ def create_skill(analysis: dict) -> Path:
     return skill_file
 
 
-def process_skill(analysis: dict) -> None:
+def process_skill(analysis: dict, provider: str) -> None:
     skill_file = get_skill_path(analysis)
 
     print()
@@ -272,7 +389,7 @@ def process_skill(analysis: dict) -> None:
         print(skill_file)
         return
 
-    decision, existing, reason = ask_existing_skill_match(analysis)
+    decision, existing, reason = ask_existing_skill_match(analysis, provider)
     if existing is not None:
         print(f"{decision} EXISTING SKILL")
         print(existing)
@@ -291,15 +408,19 @@ def process_skill(analysis: dict) -> None:
 
 
 def main() -> None:
-    if len(sys.argv) != 2:
-        print("Usage:")
-        print("  python main.py <problem_directory>")
-        print()
-        print("Example:")
-        print("  python main.py test")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description="Analyze a problem into a reusable competitive-programming skill."
+    )
+    parser.add_argument("problem_directory")
+    parser.add_argument(
+        "--provider",
+        choices=("codex", "copilot"),
+        default="codex",
+        help="AI CLI to use (default: codex).",
+    )
+    args = parser.parse_args()
 
-    problem_dir = Path(sys.argv[1]).resolve()
+    problem_dir = Path(args.problem_directory).resolve()
 
     if not problem_dir.exists():
         print("ERROR: Directory does not exist:")
@@ -320,22 +441,21 @@ def main() -> None:
     print("========================================")
     print()
 
-    run_codex(
+    run_analysis(
+        args.provider,
         problem_dir,
         output_file,
     )
 
     print("Reading analysis...")
 
-    analysis = load_analysis(
-        output_file
-    )
+    analysis = load_analysis(output_file, args.provider)
 
     print()
     print("Analysis saved to:")
     print(f"  {output_file}")
 
-    process_skill(analysis)
+    process_skill(analysis, args.provider)
 
 
 if __name__ == "__main__":
