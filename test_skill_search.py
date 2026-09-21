@@ -13,6 +13,7 @@ from main import (
     process_skill,
     validate_analysis_response,
     validate_match_response,
+    validate_skill_path_parts,
 )
 from skill_search import load_skill_documents, rank_candidates
 
@@ -66,6 +67,17 @@ class SkillSearchTests(unittest.TestCase):
             get_skill_path(analysis),
             SKILLS_DIR / "game_theory" / "valuation.md",
         )
+
+    def test_skill_path_rejects_traversal_and_implementation_terms(self) -> None:
+        with self.assertRaisesRegex(ValueError, "cannot contain"):
+            validate_skill_path_parts(["games", "..", "secret"])
+
+        with self.assertRaisesRegex(ValueError, "implementation details"):
+            validate_skill_path_parts(["precompute", "powers"])
+
+    def test_skill_path_rejects_invalid_segment_format(self) -> None:
+        with self.assertRaisesRegex(ValueError, "lowercase"):
+            validate_skill_path_parts(["Greedy Ideas"])
 
     def test_analysis_response_requires_all_schema_fields(self) -> None:
         with self.assertRaisesRegex(ValueError, "missing required"):

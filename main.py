@@ -18,6 +18,15 @@ from skill_search import (
 
 
 ROOT = Path(__file__).resolve().parent
+SKILL_SEGMENT_RE = re.compile(r"^[a-z0-9_][a-z0-9_-]*$")
+IMPLEMENTATION_PATH_TERMS = {
+    "calculate",
+    "complexity",
+    "iterate",
+    "loop",
+    "precompute",
+    "variable",
+}
 
 PROMPT_FILE = ROOT / "prompt.md"
 SCHEMA_FILE = ROOT / "schema.json"
@@ -296,7 +305,23 @@ def _flatten_skill_path_items(value: object) -> list[str]:
         return []
     cleaned = text.replace("\\", "/")
     parts = [part.strip() for part in cleaned.split("/") if part.strip()]
-    return [part for part in parts if part not in {".", ".."}]
+    return parts
+
+
+def validate_skill_path_parts(parts: list[str]) -> None:
+    for part in parts:
+        if part in {".", ".."}:
+            raise ValueError("Skill paths cannot contain '.' or '..'.")
+        if not SKILL_SEGMENT_RE.fullmatch(part):
+            raise ValueError(
+                f"Invalid skill path segment '{part}'. Use lowercase letters, "
+                "digits, underscores, or hyphens."
+            )
+        if part in IMPLEMENTATION_PATH_TERMS:
+            raise ValueError(
+                f"Skill path segment '{part}' describes implementation details, "
+                "not a reusable reasoning pattern."
+            )
 
 
 def _string_list(value: object) -> list[str]:
@@ -320,6 +345,12 @@ def get_skill_path(analysis: dict) -> Path:
     raw_parts = _flatten_skill_path_items(payload)
     if not raw_parts:
         print("ERROR: Empty skill path.")
+        sys.exit(1)
+
+    try:
+        validate_skill_path_parts(raw_parts)
+    except ValueError as error:
+        print(f"ERROR: Invalid skill path: {error}")
         sys.exit(1)
 
     skill_path = "/".join(raw_parts)
