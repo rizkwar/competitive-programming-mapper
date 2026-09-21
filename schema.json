@@ -1,0 +1,8 @@
+{
+  "core_idea": "string",
+  "reasoning_patterns": ["string"],
+  "questions": ["string"],
+  "signals": ["string"],
+  "candidate_path": ["string"],
+  "related_patterns": ["string"]
+}
