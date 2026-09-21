@@ -1,34 +1,37 @@
 {
-  "core_idea": "Abstract every pile to the exponent of 2 dividing it, then classify a position using the minimum such exponent and whether all piles attain it. This valuation-based state compression turns the game into a win/lose/draw classification that can be counted by minimum-exponent layers.",
+  "core_idea": "Classify each pile only by the position of its least significant set bit. The minimum such position determines whether a player can force the game into a uniform lower layer, while even-minimum mixed states can be maintained forever, leading to a draw.",
   "key_observations": [
-    "A move is available exactly when some pile has positive 2-adic valuation; termination means every valuation is zero.",
-    "If every pile has the same positive valuation c, any move makes every valuation c-1.",
-    "Choosing a pile with minimum valuation m makes all valuations become m-1 when m is odd, producing a favorable uniform state for the opponent classification.",
-    "When m is even and all valuations equal m, every move creates the odd uniform state, so the current player loses.",
-    "When m is even but valuations are non-uniform, players can preserve a mixed state indefinitely, so optimal play yields a draw.",
-    "Configurations with minimum valuation exactly i can be counted as those with every value divisible by 2^i, minus those with every value divisible by 2^(i+1)."
+    "A terminal state is exactly when every pile has least significant bit position 0, because all piles are odd.",
+    "If all piles have the same least significant bit position c > 0, any move decreases every pile's position to c - 1.",
+    "Choosing a pile whose least significant bit equals the current minimum makes all piles collapse to one common lower position.",
+    "The parity of the minimum least-significant-bit position determines whether collapsing the state gives the opponent a losing or winning layer.",
+    "When the minimum is even but not all piles attain it, players can avoid collapse by repeatedly choosing a pile above the minimum, preserving a mixed state and forcing a draw.",
+    "Counting configurations can be done by fixing the exact minimum least-significant-bit position, using counts of numbers divisible by powers of two."
   ],
   "reasoning_patterns": [
-    "Replace numeric values by the divisibility valuation that determines move behavior.",
-    "Identify a minimal statistic whose parity controls the game outcome.",
-    "Separate uniform boundary states from mixed states with the same minimum.",
-    "Prove draws by finding a maintainable nonterminal invariant.",
-    "Count combinatorial objects by exact minimum using nested-set subtraction."
+    "Replace large numeric states with a small invariant that fully controls game behavior.",
+    "Analyze game moves through monotone layers of an invariant rather than raw values.",
+    "Classify impartial game outcomes by identifying forced transitions between canonical state classes.",
+    "Separate decisive states from indefinitely maintainable states to account for draws.",
+    "Count objects by fixing the exact minimum value of a statistic.",
+    "Use cumulative counts and subtraction to count exact-value classes."
   ],
   "questions": [
-    "Does the move depend only on a number's divisibility level?",
-    "What is the smallest valuation present, and how does a move affect it?",
-    "Are uniform and non-uniform states fundamentally different?",
-    "Can either player maintain a nonterminal mixed-state invariant forever?",
-    "Can I count states with an exact minimum by subtracting two threshold counts?"
+    "What reduced state information actually affects legal moves and outcomes?",
+    "Is there an invariant or valuation that changes predictably after each move?",
+    "What happens if all components share the same invariant value?",
+    "Can a player force the state into a canonical class?",
+    "Does the parity of a layer or distance to terminal state decide the winner?",
+    "Are there states where both players can preserve non-termination?",
+    "Can I count configurations by fixing the exact minimum of some statistic?"
   ],
   "skill_path": [
-    "game_theory/impartial_games/invariants/valuation/minimum_valuation_state_classification"
+    "game_theory/state_compression/invariant_layers/minimum_valuation_classification"
   ],
   "probably_related": [
-    "number_theory/divisibility/2_adic_valuation",
-    "combinatorics/counting_by_extremum/threshold_subtraction",
-    "game_theory/draw_games/maintainable_nonterminal_invariant",
-    "state_compression/abstraction/retain_move_relevant_information"
+    "counting/exact_value/minimum_statistic/cumulative_difference",
+    "game_theory/draws/cycle_or_avoidance/maintainable_state",
+    "number_theory/bitwise/adic_valuation/least_significant_bit",
+    "game_theory/canonical_states/parity_layers/forced_transition"
   ]
 }

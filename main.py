@@ -8,6 +8,22 @@ ROOT = Path(__file__).resolve().parent
 
 PROMPT_FILE = ROOT / "prompt.md"
 SCHEMA_FILE = ROOT / "schema.json"
+SKILLS_DIR = ROOT / "skills"
+
+
+def validate_files(problem_dir: Path) -> None:
+    required_files = [
+        PROMPT_FILE,
+        SCHEMA_FILE,
+        problem_dir / "problem.md",
+        problem_dir / "solution.md",
+    ]
+
+    for file in required_files:
+        if not file.exists():
+            print(f"ERROR: Missing file:")
+            print(f"  {file}")
+            sys.exit(1)
 
 
 def run_codex(problem_dir: Path, output_file: Path) -> None:
@@ -42,49 +58,57 @@ def run_codex(problem_dir: Path, output_file: Path) -> None:
         )
     except FileNotFoundError:
         print("ERROR: 'codex' was not found in PATH.")
-        print("Make sure Codex CLI is installed and 'codex' works in your terminal.")
         sys.exit(1)
     except subprocess.CalledProcessError as e:
         print(f"ERROR: Codex exited with code {e.returncode}.")
         sys.exit(e.returncode)
 
 
-def format_json(output_file: Path) -> None:
-    if not output_file.exists():
-        print(f"ERROR: Codex did not create {output_file}.")
-        sys.exit(1)
-
+def load_analysis(output_file: Path) -> dict:
     try:
         data = json.loads(output_file.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        print(f"ERROR: Output file was not created:")
+        print(f"  {output_file}")
+        sys.exit(1)
     except json.JSONDecodeError as e:
         print("ERROR: Codex output is not valid JSON.")
-        print(f"Location: line {e.lineno}, column {e.colno}")
-        print(f"Message: {e.msg}")
+        print(f"Line {e.lineno}, column {e.colno}: {e.msg}")
         sys.exit(1)
 
     output_file.write_text(
-        json.dumps(
-            data,
-            indent=2,
-            ensure_ascii=False,
-        ) + "\n",
+        json.dumps(data, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
 
+    return data
 
-def validate_files(problem_dir: Path) -> None:
-    required_files = [
-        PROMPT_FILE,
-        SCHEMA_FILE,
-        problem_dir / "problem.md",
-        problem_dir / "solution.md",
-    ]
 
-    for file in required_files:
-        if not file.exists():
-            print(f"ERROR: Missing file:")
-            print(f"  {file}")
-            sys.exit(1)
+def get_skill_path(analysis: dict) -> Path:
+    paths = analysis.get("skill_path", [])
+
+    if len(paths) != 1:
+        print("ERROR: Expected exactly one skill_path.")
+        sys.exit(1)
+
+    skill_path = paths[0].strip("/")
+
+    return SKILLS_DIR / f"{skill_path}.md"
+
+
+def check_skill(analysis: dict) -> None:
+    skill_file = get_skill_path(analysis)
+
+    print()
+    print("Skill detection")
+    print("----------------")
+
+    if skill_file.exists():
+        print("EXISTING SKILL")
+        print(skill_file)
+    else:
+        print("NEW SKILL")
+        print(skill_file)
 
 
 def main() -> None:
@@ -98,13 +122,8 @@ def main() -> None:
 
     problem_dir = Path(sys.argv[1]).resolve()
 
-    if not problem_dir.exists():
-        print(f"ERROR: Directory does not exist:")
-        print(f"  {problem_dir}")
-        sys.exit(1)
-
-    if not problem_dir.is_dir():
-        print(f"ERROR: Not a directory:")
+    if not problem_dir.exists() or not problem_dir.is_dir():
+        print(f"ERROR: Invalid directory:")
         print(f"  {problem_dir}")
         sys.exit(1)
 
@@ -116,25 +135,16 @@ def main() -> None:
     print(" Competitive Programming Skill Analyzer")
     print("========================================")
     print()
-    print(f"Problem directory : {problem_dir}")
-    print(f"Problem           : {problem_dir / 'problem.md'}")
-    print(f"Solution          : {problem_dir / 'solution.md'}")
-    print(f"Prompt            : {PROMPT_FILE}")
-    print(f"Schema            : {SCHEMA_FILE}")
-    print(f"Output            : {output_file}")
-    print()
 
     run_codex(problem_dir, output_file)
 
-    print()
-    print("Formatting JSON...")
+    print("Reading analysis...")
+    analysis = load_analysis(output_file)
 
-    format_json(output_file)
-
-    print()
-    print("Done.")
-    print(f"Analysis saved to:")
+    print("Analysis saved to:")
     print(f"  {output_file}")
+
+    check_skill(analysis)
 
 
 if __name__ == "__main__":
