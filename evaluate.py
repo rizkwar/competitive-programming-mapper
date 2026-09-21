@@ -19,7 +19,7 @@ from main import (
 from skill_search import load_skill_documents, rank_candidates
 
 
-DEFAULT_SUITE = ROOT / "evaluation_cases.json"
+DEFAULT_SUITE = ROOT / "evaluation" / "cases.json"
 DEFAULT_RESULTS = ROOT / "evaluation_results"
 
 

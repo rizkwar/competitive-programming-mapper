@@ -41,7 +41,7 @@ Clone the repository and enter the project directory:
 
 ```powershell
 git clone https://github.com/rizkwar/competitive-programming-mapper.git
-cd competitive-programming-chain-of-thoughts
+cd competitive-programming-mapper
 ```
 
 Verify Python:
@@ -204,7 +204,7 @@ implementation-oriented terms such as `precompute`, `iterate`, and `loop`.
 
 ## Evaluation
 
-Evaluation cases are listed in `evaluation_cases.json`. Run the suite with
+Evaluation cases are listed in `evaluation/cases.json`. Run the suite with
 Codex:
 
 ```powershell
@@ -245,7 +245,7 @@ python evaluate.py --provider codex --results-dir temporary-results
 Run the test suite:
 
 ```powershell
-python -m unittest -v test_skill_search.py
+python -m unittest -v tests/test_mapper.py
 ```
 
 Or run all discovered unittest files quietly:
@@ -263,14 +263,25 @@ handling, review previews, and confirmed extension behavior.
 .
 ├── Problems/             # problem.md and solution.md inputs
 ├── skills/               # reusable generated skill notes
+├── config/               # JSON response schemas
+├── prompts/              # AI prompt Markdown
+├── evaluation/           # benchmark case definitions
+├── tests/                # unit tests
 ├── main.py               # analysis and skill-management CLI
 ├── skill_search.py       # Markdown indexing and candidate ranking
-├── evaluate.py           # benchmark runner
-├── prompt.md             # analysis instructions
-├── schema.json           # analysis response schema
-├── match_schema.json     # reuse/extend/new response schema
-└── test_skill_search.py  # unit tests
+└── evaluate.py           # benchmark runner
 ```
+
+Generated files are intentionally kept separate from the source layout:
+
+```text
+Problems/<name>/analysis.json   # ignored per-problem AI analysis
+evaluation_results/             # ignored benchmark output
+```
+
+The reusable skill library under `skills/` is indexed at runtime. New skill
+files are created only after a successful analysis and matching decision;
+existing skills are never overwritten by normal execution.
 
 ## Troubleshooting
 

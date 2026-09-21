@@ -29,9 +29,9 @@ IMPLEMENTATION_PATH_TERMS = {
     "variable",
 }
 
-PROMPT_FILE = ROOT / "prompt.md"
-SCHEMA_FILE = ROOT / "schema.json"
-MATCH_SCHEMA_FILE = ROOT / "match_schema.json"
+PROMPT_FILE = ROOT / "prompts" / "analysis.md"
+SCHEMA_FILE = ROOT / "config" / "analysis_schema.json"
+MATCH_SCHEMA_FILE = ROOT / "config" / "match_schema.json"
 SKILLS_DIR = ROOT / "skills"
 
 
@@ -186,10 +186,10 @@ def run_codex(problem_dir: Path, output_file: Path) -> None:
         "-o",
         str(output_file),
         (
-            "Read prompt.md first. "
+            "Read prompts/analysis.md first. "
             f"Then analyze {problem_file.as_posix()} and "
             f"{solution_file.as_posix()} according to the instructions "
-            "in prompt.md. Return the required JSON."
+            "in prompts/analysis.md. Return the required JSON."
         ),
     ]
 

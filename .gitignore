@@ -1,5 +1,6 @@
 # Generated Python files
 __pycache__/
+tests/__pycache__/
 *.py[cod]
 *$py.class
 
@@ -23,6 +24,9 @@ ENV/
 
 # Outputs from evaluation runs
 evaluation_results/
+
+# Generated analysis output inside problem folders
+Problems/*/analysis.json
 
 # Repository-local skill drafts and generated skill content
 skills/
