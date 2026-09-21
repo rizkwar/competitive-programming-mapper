@@ -4,6 +4,12 @@
     "core_idea": {
       "type": "string"
     },
+    "key_observations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "reasoning_patterns": {
       "type": "array",
       "items": {
@@ -16,19 +22,13 @@
         "type": "string"
       }
     },
-    "signals": {
+    "skill_path": {
       "type": "array",
       "items": {
         "type": "string"
       }
     },
-    "candidate_path": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
-    },
-    "related_patterns": {
+    "probably_related": {
       "type": "array",
       "items": {
         "type": "string"
@@ -37,11 +37,11 @@
   },
   "required": [
     "core_idea",
+    "key_observations",
     "reasoning_patterns",
     "questions",
-    "signals",
-    "candidate_path",
-    "related_patterns"
+    "skill_path",
+    "probably_related"
   ],
   "additionalProperties": false
 }
