@@ -55,6 +55,18 @@ Can I count by fixing an exact value?
 
 Questions must be reusable across many problems.
 
+## signals
+
+List short, reusable clues that suggest this skill may apply to a problem.
+
+Examples:
+
+- a small critical resource determines how many groups can contribute
+- the objective depends on the first missing value
+- choices must preserve future feasibility
+
+Avoid problem-specific values, variable names, and implementation details.
+
 ## skill_path
 
 Create the hierarchical path for the MAIN reusable skill.

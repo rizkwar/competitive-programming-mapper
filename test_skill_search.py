@@ -83,6 +83,17 @@ class SkillSearchTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "missing required"):
             validate_analysis_response({"core_idea": "invariant"})
 
+    def test_analysis_response_allows_legacy_missing_signals(self) -> None:
+        analysis = {
+            "core_idea": "invariant",
+            "key_observations": [],
+            "reasoning_patterns": [],
+            "questions": [],
+            "skill_path": ["invariants"],
+            "probably_related": [],
+        }
+        self.assertEqual(validate_analysis_response(analysis), analysis)
+
     def test_match_response_rejects_invalid_decision(self) -> None:
         with self.assertRaisesRegex(ValueError, "invalid value"):
             validate_match_response(
@@ -132,6 +143,8 @@ class SkillSearchTests(unittest.TestCase):
         match.return_value = ("CREATE_NEW", None, "No match.")
         analysis = {
             "skill_path": ["__review_test__/preview_only"],
+            "core_idea": "Compress the state to its decisive invariant.",
+            "signals": ["A small statistic controls feasibility."],
             "questions": ["Can I find an invariant?"],
             "key_observations": ["The state can be compressed."],
             "reasoning_patterns": ["Preserve the useful invariant."],
@@ -147,6 +160,9 @@ class SkillSearchTests(unittest.TestCase):
         self.assertFalse(target.exists())
         self.assertIn("New-skill preview (not written)", output.getvalue())
         self.assertIn("+++ skills/__review_test__/preview_only.md", output.getvalue())
+        self.assertIn("## Core Idea", output.getvalue())
+        self.assertIn("## Signals", output.getvalue())
+        self.assertIn("A small statistic controls feasibility.", output.getvalue())
 
     @patch("main.draft_skill_extension")
     @patch("main.ask_existing_skill_match")
@@ -169,6 +185,41 @@ class SkillSearchTests(unittest.TestCase):
         self.assertEqual(existing.read_text(encoding="utf-8"), before)
         self.assertIn("Extension preview (not written)", output.getvalue())
         self.assertIn("+## Extra Insight", output.getvalue())
+
+    @patch("builtins.input", return_value="y")
+    @patch("main.draft_skill_extension")
+    @patch("main.ask_existing_skill_match")
+    def test_apply_extension_requires_flag_and_confirmation(
+        self,
+        match,
+        draft,
+        confirm,
+    ) -> None:
+        candidate = load_skill_documents(SKILLS_DIR)[0]
+        existing = candidate.path
+        before = existing.read_text(encoding="utf-8")
+        proposal = before + "\n## Extra Insight\n\n- New reusable detail.\n"
+        match.return_value = ("EXTEND", existing, "Related technique.")
+        draft.return_value = proposal
+
+        process_skill({"skill_path": ["unused"]}, "codex", apply_extension=True)
+
+        self.assertEqual(existing.read_text(encoding="utf-8"), proposal)
+        confirm.assert_called_once()
+        existing.write_text(before, encoding="utf-8")
+
+    @patch("main.draft_skill_extension")
+    @patch("main.ask_existing_skill_match")
+    def test_extension_stays_unmodified_without_apply_flag(self, match, draft) -> None:
+        candidate = load_skill_documents(SKILLS_DIR)[0]
+        existing = candidate.path
+        before = existing.read_text(encoding="utf-8")
+        match.return_value = ("EXTEND", existing, "Related technique.")
+        draft.return_value = before + "\n## Extra Insight\n\n- Preview only.\n"
+
+        process_skill({"skill_path": ["unused"]}, "codex")
+
+        self.assertEqual(existing.read_text(encoding="utf-8"), before)
 
     @patch("main.ask_existing_skill_match")
     def test_matcher_failure_stops_skill_creation(self, match) -> None:

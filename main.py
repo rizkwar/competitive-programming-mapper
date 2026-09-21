@@ -106,6 +106,8 @@ def validate_schema_response(
         )
 
     for field in list_fields:
+        if field not in value and field in optional_fields:
+            continue
         if not isinstance(value[field], list) or not all(
             isinstance(item, str) for item in value[field]
         ):
@@ -135,8 +137,10 @@ def validate_analysis_response(value: dict) -> dict:
             "questions",
             "skill_path",
             "probably_related",
+            "signals",
         ),
         string_fields=("core_idea",),
+        optional_fields=("signals",),
     )
 
 
@@ -486,12 +490,21 @@ If you choose CREATE_NEW, path must be null.
 def skill_content(analysis: dict, skill_file: Path) -> str:
     """Build the Markdown content for a newly proposed skill."""
     questions = _string_list(analysis.get("questions", []))
+    signals = _string_list(analysis.get("signals", []))
     observations = _string_list(analysis.get("key_observations", []))
     patterns = _string_list(analysis.get("reasoning_patterns", []))
     related = _string_list(analysis.get("probably_related", []))
 
     return (
         f"# {skill_file.stem.replace('_', ' ').title()}\n\n"
+
+        "## Core Idea\n\n"
+        + analysis.get("core_idea", "").strip()
+        + "\n\n"
+
+        "## Signals\n\n"
+        + "\n".join(f"- {signal}" for signal in signals)
+        + "\n\n"
 
         "## Questions\n\n"
         + "\n".join(f"- {question}" for question in questions)
@@ -607,7 +620,12 @@ def print_diff(before: str, after: str, from_file: str, to_file: str) -> None:
     print(rendered if rendered else "(No content changes proposed.)")
 
 
-def process_skill(analysis: dict, provider: str, review: bool = False) -> None:
+def process_skill(
+    analysis: dict,
+    provider: str,
+    review: bool = False,
+    apply_extension: bool = False,
+) -> None:
     skill_file = get_skill_path(analysis)
 
     print()
@@ -632,18 +650,27 @@ def process_skill(analysis: dict, provider: str, review: bool = False) -> None:
         print(existing)
         if reason:
             print(f"Reason: {reason}")
-        if review and decision == "EXTEND":
+        if (review or apply_extension) and decision == "EXTEND":
             proposal = draft_skill_extension(analysis, existing, provider)
             if proposal is not None:
                 print()
-                print("Extension preview (not written)")
-                print("-------------------------------")
+                print("Extension proposal")
+                print("------------------")
                 print_diff(
                     existing.read_text(encoding="utf-8"),
                     proposal,
                     existing.relative_to(ROOT).as_posix(),
                     existing.relative_to(ROOT).as_posix(),
                 )
+                if apply_extension:
+                    answer = input("\nApply this extension? [y/N]: ").strip().lower()
+                    if answer in {"y", "yes"}:
+                        existing.write_text(proposal, encoding="utf-8")
+                        print(f"Updated skill: {existing}")
+                    else:
+                        print("Extension not applied.")
+                else:
+                    print("Extension preview (not written)")
         return
 
     print("CREATE NEW SKILL")
@@ -684,6 +711,11 @@ def main() -> None:
         action="store_true",
         help="Preview the proposed skill change without writing under skills/.",
     )
+    parser.add_argument(
+        "--apply-extension",
+        action="store_true",
+        help="Show and explicitly confirm an EXTEND proposal before writing it.",
+    )
     args = parser.parse_args()
 
     problem_dir = Path(args.problem_directory).resolve()
@@ -721,7 +753,12 @@ def main() -> None:
     print("Analysis saved to:")
     print(f"  {output_file}")
 
-    process_skill(analysis, args.provider, args.review)
+    process_skill(
+        analysis,
+        args.provider,
+        args.review,
+        args.apply_extension,
+    )
 
 
 if __name__ == "__main__":

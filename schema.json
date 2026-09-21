@@ -22,6 +22,12 @@
         "type": "string"
       }
     },
+    "signals": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "skill_path": {
       "type": "array",
       "items": {
@@ -40,6 +46,7 @@
     "key_observations",
     "reasoning_patterns",
     "questions",
+    "signals",
     "skill_path",
     "probably_related"
   ],
