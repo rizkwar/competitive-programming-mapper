@@ -432,11 +432,12 @@ If you choose CREATE_NEW, path must be null.
             subprocess.CalledProcessError,
             json.JSONDecodeError,
             ValueError,
+            OSError,
         ) as error:
             if isinstance(error, ValueError):
                 print(f"WARNING: Existing-skill matcher returned invalid JSON: {error}")
-            print("WARNING: Existing-skill matching failed; continuing with new-skill detection.")
-            return "CREATE_NEW", None, "Matcher failed."
+            print("WARNING: Existing-skill matching failed; no skill will be created.")
+            return "MATCH_FAILED", None, "Matcher failed."
 
         decision = result.get("decision")
         selected = get_existing_skill_path(str(result.get("path") or ""))
@@ -446,7 +447,7 @@ If you choose CREATE_NEW, path must be null.
             return decision, selected, str(result.get("reason", ""))
         if decision == "CREATE_NEW":
             return decision, None, str(result.get("reason", ""))
-        return "CREATE_NEW", None, "Matcher returned an invalid candidate path."
+        return "MATCH_FAILED", None, "Matcher returned an invalid candidate path."
     finally:
         output_file.unlink(missing_ok=True)
 
@@ -588,6 +589,13 @@ def process_skill(analysis: dict, provider: str, review: bool = False) -> None:
         return
 
     decision, existing, reason = ask_existing_skill_match(analysis, provider)
+    if decision == "MATCH_FAILED":
+        print("MATCHING FAILED")
+        print("No skill was created. Rerun after reviewing the matcher error.")
+        if reason:
+            print(f"Reason: {reason}")
+        return
+
     if existing is not None:
         print(f"{decision} EXISTING SKILL")
         print(existing)

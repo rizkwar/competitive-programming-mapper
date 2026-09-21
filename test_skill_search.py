@@ -102,6 +102,19 @@ class SkillSearchTests(unittest.TestCase):
         self.assertIsNotNone(existing)
         self.assertIsInstance(run.call_args.kwargs["input"], str)
 
+    @patch("main.subprocess.run", side_effect=OSError("CLI unavailable"))
+    def test_matcher_failure_does_not_create_a_new_skill(self, run) -> None:
+        analysis = {
+            "core_idea": "classify states using an invariant",
+            "skill_path": ["__review_test__", "matcher_failure"],
+        }
+
+        decision, existing, reason = ask_existing_skill_match(analysis, "copilot")
+
+        self.assertEqual(decision, "MATCH_FAILED")
+        self.assertIsNone(existing)
+        self.assertEqual(reason, "Matcher failed.")
+
     @patch("main.ask_existing_skill_match")
     def test_review_mode_previews_without_creating_a_skill(self, match) -> None:
         match.return_value = ("CREATE_NEW", None, "No match.")
@@ -144,6 +157,25 @@ class SkillSearchTests(unittest.TestCase):
         self.assertEqual(existing.read_text(encoding="utf-8"), before)
         self.assertIn("Extension preview (not written)", output.getvalue())
         self.assertIn("+## Extra Insight", output.getvalue())
+
+    @patch("main.ask_existing_skill_match")
+    def test_matcher_failure_stops_skill_creation(self, match) -> None:
+        match.return_value = ("MATCH_FAILED", None, "Matcher failed.")
+        analysis = {
+            "skill_path": ["__review_test__", "matcher_failure_process"],
+            "questions": [],
+            "key_observations": [],
+            "reasoning_patterns": [],
+            "probably_related": [],
+        }
+        target = SKILLS_DIR / "__review_test__" / "matcher_failure_process.md"
+
+        output = StringIO()
+        with redirect_stdout(output):
+            process_skill(analysis, "codex")
+
+        self.assertFalse(target.exists())
+        self.assertIn("No skill was created.", output.getvalue())
 
 
 if __name__ == "__main__":
