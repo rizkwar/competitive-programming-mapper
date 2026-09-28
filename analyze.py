@@ -9,7 +9,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from skill_search import (
+from Helper.skill_search import (
     analysis_query,
     candidate_context,
     load_skill_documents,
@@ -42,13 +42,17 @@ KNOWN_BROAD_CATEGORIES = {
     "trees",
 }
 IMPLEMENTATION_PATH_TERMS = {
-    "calculate",
     "complexity",
-    "iterate",
-    "loop",
-    "precompute",
     "variable",
 }
+SKILL_SPECIFICITY_WARNINGS = (
+    ("in this problem", "problem-specific framing"),
+    ("given input", "problem-specific input description"),
+    ("output", "problem-specific output description"),
+    ("variable", "problem-specific variable reference"),
+    ("index i", "problem-specific index reference"),
+    ("index j", "problem-specific index reference"),
+)
 
 PROMPT_FILE = ROOT / "prompts" / "analysis.md"
 SCHEMA_FILE = ROOT / "config" / "analysis_schema.json"
@@ -152,7 +156,7 @@ def validate_schema_response(
 
 
 def validate_analysis_response(value: dict) -> dict:
-    return validate_schema_response(
+    validate_schema_response(
         value,
         required=(
             "core_idea",
@@ -173,6 +177,12 @@ def validate_analysis_response(value: dict) -> dict:
         string_fields=("core_idea",),
         optional_fields=("signals",),
     )
+    if not value["core_idea"].strip():
+        raise ValueError("AI response field 'core_idea' must not be empty.")
+    for field in ("questions", "reasoning_patterns"):
+        if not any(item.strip() for item in value[field]):
+            raise ValueError(f"AI response field '{field}' needs a useful item.")
+    return value
 
 
 def validate_match_response(value: dict) -> dict:
@@ -453,10 +463,15 @@ def ask_existing_skill_match(
     provider: str,
 ) -> tuple[str, Path | None, str]:
     """Ask the selected AI provider whether a retrieved skill should be reused."""
-    candidates = rank_candidates(
-        analysis,
-        load_skill_documents(SKILLS_DIR),
+    documents = load_skill_documents(SKILLS_DIR)
+    candidates = rank_candidates(analysis, documents)
+    proposed_path = get_skill_path(analysis)
+    exact_path_document = next(
+        (document for document in documents if document.path.resolve() == proposed_path),
+        None,
     )
+    if exact_path_document is not None and exact_path_document not in candidates:
+        candidates = [exact_path_document, *candidates[:7]]
     if not candidates:
         return "CREATE_NEW", None, "No existing skills were retrieved."
 
@@ -576,6 +591,28 @@ def skill_content(analysis: dict, skill_file: Path) -> str:
     )
 
 
+def skill_quality_warnings(content: str) -> list[str]:
+    """Return review warnings for details that may be too problem-specific."""
+    lowered = content.lower()
+    return [
+        f"{term}: {description}"
+        for term, description in SKILL_SPECIFICITY_WARNINGS
+        if re.search(rf"\b{re.escape(term)}\b", lowered)
+    ]
+
+
+def print_skill_quality_warnings(content: str) -> None:
+    warnings = skill_quality_warnings(content)
+    if not warnings:
+        return
+    print()
+    print("WARNING: Skill may contain problem-specific details")
+    print("----------------------------------------------------")
+    for warning in warnings:
+        print(f"- {warning}")
+    print("Review the proposal and generalize these details if needed.")
+
+
 def create_skill(analysis: dict) -> Path:
     skill_file = get_skill_path(analysis)
 
@@ -684,11 +721,6 @@ def process_skill(
     print("Skill detection")
     print("----------------")
 
-    if skill_file.exists():
-        print("REUSE EXISTING SKILL")
-        print(skill_file)
-        return
-
     decision, existing, reason = ask_existing_skill_match(analysis, provider)
     if decision == "MATCH_FAILED":
         print("MATCHING FAILED")
@@ -708,6 +740,7 @@ def process_skill(
                 print()
                 print("Extension proposal")
                 print("------------------")
+                print_skill_quality_warnings(proposal)
                 print_diff(
                     existing.read_text(encoding="utf-8"),
                     proposal,
@@ -727,6 +760,12 @@ def process_skill(
 
     print("CREATE NEW SKILL")
     print(skill_file)
+    if skill_file.exists():
+        print("PATH COLLISION: This path already has a different skill.")
+        print("Choose a distinct taxonomy path before creating the new skill.")
+        return
+    proposed_content = skill_content(analysis, skill_file)
+    print_skill_quality_warnings(proposed_content)
 
     if review:
         print()
@@ -734,7 +773,7 @@ def process_skill(
         print("------------------------------")
         print_diff(
             "",
-            skill_content(analysis, skill_file),
+            proposed_content,
             "/dev/null",
             skill_file.relative_to(ROOT).as_posix(),
         )

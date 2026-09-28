@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from main import (
+from analyze import (
     ROOT,
     SKILLS_DIR,
     ask_existing_skill_match,
@@ -16,7 +16,7 @@ from main import (
     run_analysis,
     validate_files,
 )
-from skill_search import load_skill_documents, rank_candidates
+from Helper.skill_search import load_skill_documents, rank_candidates
 
 
 DEFAULT_SUITE = ROOT / "evaluation" / "cases.json"
@@ -51,12 +51,7 @@ def evaluate_case(case: dict, provider: str, results_dir: Path) -> dict:
         load_skill_documents(SKILLS_DIR),
     )
     proposed_file = get_skill_path(analysis)
-    if proposed_file.exists():
-        decision = "REUSE"
-        selected = proposed_file
-        reason = "The generated skill path already exists."
-    else:
-        decision, selected, reason = ask_existing_skill_match(analysis, provider)
+    decision, selected, reason = ask_existing_skill_match(analysis, provider)
 
     expected = case.get("expected")
     actual = {

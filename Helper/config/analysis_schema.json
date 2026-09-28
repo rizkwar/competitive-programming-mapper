@@ -2,7 +2,8 @@
   "type": "object",
   "properties": {
     "core_idea": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "key_observations": {
       "type": "array",
@@ -12,12 +13,14 @@
     },
     "reasoning_patterns": {
       "type": "array",
+      "minItems": 1,
       "items": {
         "type": "string"
       }
     },
     "questions": {
       "type": "array",
+      "minItems": 1,
       "items": {
         "type": "string"
       }

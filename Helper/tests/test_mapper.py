@@ -1,11 +1,12 @@
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import contextmanager, redirect_stdout
 from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
-from main import (
+from analyze import (
+    ROOT,
     SKILLS_DIR,
     ask_existing_skill_match,
     extract_json_response,
@@ -14,9 +15,25 @@ from main import (
     validate_analysis_response,
     validate_match_response,
     normalize_skill_path_parts,
+    skill_quality_warnings,
     validate_skill_path_parts,
 )
-from skill_search import load_skill_documents, rank_candidates
+from Helper.skill_search import load_skill_documents, rank_candidates
+
+
+@contextmanager
+def seeded_library():
+    """Give tests a private library instead of depending on local ignored skills."""
+    with tempfile.TemporaryDirectory(dir=ROOT) as directory:
+        skills = Path(directory) / "skills"
+        skill = skills / "invariants" / "minimum-level.md"
+        skill.parent.mkdir(parents=True)
+        skill.write_text(
+            "# Minimum Level\n\n## Questions\n\n- What is the minimum level?\n",
+            encoding="utf-8",
+        )
+        with patch("main.SKILLS_DIR", skills):
+            yield skills, skill
 
 
 class SkillSearchTests(unittest.TestCase):
@@ -69,12 +86,12 @@ class SkillSearchTests(unittest.TestCase):
             SKILLS_DIR / "game_theory" / "valuation.md",
         )
 
-    def test_skill_path_rejects_traversal_and_implementation_terms(self) -> None:
+    def test_skill_path_rejects_traversal_and_unsafe_terms(self) -> None:
         with self.assertRaisesRegex(ValueError, "cannot contain"):
             validate_skill_path_parts(["games", "..", "secret"])
 
         with self.assertRaisesRegex(ValueError, "implementation details"):
-            validate_skill_path_parts(["precompute", "powers"])
+            validate_skill_path_parts(["variable", "powers"])
 
     def test_skill_path_rejects_invalid_segment_format(self) -> None:
         with self.assertRaisesRegex(ValueError, "lowercase"):
@@ -92,6 +109,20 @@ class SkillSearchTests(unittest.TestCase):
             ["greedy", "successor-structures", "binary-lifting"],
         )
 
+    def test_skill_quality_validator_warns_without_rejecting_content(self) -> None:
+        warnings = skill_quality_warnings(
+            "In this problem, use two pointers and precompute transitions for index i."
+        )
+        self.assertEqual(len(warnings), 2)
+        self.assertIn("in this problem", warnings[0])
+        self.assertEqual(
+            skill_quality_warnings(
+                "Use two pointers, binary lifting, suffix arrays, segment trees, "
+                "precompute, iterate, and scan as reusable algorithmic ideas."
+            ),
+            [],
+        )
+
     def test_analysis_response_requires_all_schema_fields(self) -> None:
         with self.assertRaisesRegex(ValueError, "missing required"):
             validate_analysis_response({"core_idea": "invariant"})
@@ -100,12 +131,24 @@ class SkillSearchTests(unittest.TestCase):
         analysis = {
             "core_idea": "invariant",
             "key_observations": [],
+            "reasoning_patterns": ["Track the invariant."],
+            "questions": ["What stays unchanged?"],
+            "skill_path": ["invariants"],
+            "probably_related": [],
+        }
+        self.assertEqual(validate_analysis_response(analysis), analysis)
+
+    def test_analysis_response_rejects_empty_skill_content(self) -> None:
+        analysis = {
+            "core_idea": "invariant",
+            "key_observations": [],
             "reasoning_patterns": [],
             "questions": [],
             "skill_path": ["invariants"],
             "probably_related": [],
         }
-        self.assertEqual(validate_analysis_response(analysis), analysis)
+        with self.assertRaisesRegex(ValueError, "needs a useful item"):
+            validate_analysis_response(analysis)
 
     def test_match_response_rejects_invalid_decision(self) -> None:
         with self.assertRaisesRegex(ValueError, "invalid value"):
@@ -121,22 +164,21 @@ class SkillSearchTests(unittest.TestCase):
 
     @patch("main.subprocess.run")
     def test_copilot_match_sends_a_string_to_standard_input(self, run) -> None:
-        candidate = load_skill_documents(Path("skills"))[0]
-        run.return_value.stdout = (
-            '{"decision":"REUSE",'
-            f'"path":"{candidate.relative_path}",'
-            '"reason":"Same technique."}'
-        )
-        analysis = {
-            "core_idea": "classify game positions using valuation parity",
-            "skill_path": ["games/invariants/minimum_valuation"],
-        }
-
-        decision, existing, _ = ask_existing_skill_match(analysis, "copilot")
-
-        self.assertEqual(decision, "REUSE")
-        self.assertIsNotNone(existing)
-        self.assertIsInstance(run.call_args.kwargs["input"], str)
+        with seeded_library() as (skills, _):
+            candidate = load_skill_documents(skills)[0]
+            run.return_value.stdout = (
+                '{"decision":"REUSE",'
+                f'"path":"{candidate.relative_path}",'
+                '"reason":"Same technique."}'
+            )
+            analysis = {
+                "core_idea": "classify game positions using minimum level",
+                "skill_path": ["games/invariants/minimum_valuation"],
+            }
+            decision, existing, _ = ask_existing_skill_match(analysis, "copilot")
+            self.assertEqual(decision, "REUSE")
+            self.assertIsNotNone(existing)
+            self.assertIsInstance(run.call_args.kwargs["input"], str)
 
     @patch("main.subprocess.run", side_effect=OSError("CLI unavailable"))
     def test_matcher_failure_does_not_create_a_new_skill(self, run) -> None:
@@ -186,20 +228,19 @@ class SkillSearchTests(unittest.TestCase):
         match,
         draft,
     ) -> None:
-        candidate = load_skill_documents(SKILLS_DIR)[0]
-        existing = candidate.path
-        before = existing.read_text(encoding="utf-8")
-        match.return_value = ("EXTEND", existing, "Related technique.")
-        draft.return_value = before + "\n## Extra Insight\n\n- New reusable detail.\n"
-        analysis = {"skill_path": ["__review_test__/extension_preview"]}
+        with seeded_library() as (_, existing):
+            before = existing.read_text(encoding="utf-8")
+            match.return_value = ("EXTEND", existing, "Related technique.")
+            draft.return_value = before + "\n## Extra Insight\n\n- New reusable detail.\n"
+            analysis = {"skill_path": ["__review_test__/extension_preview"]}
 
-        output = StringIO()
-        with redirect_stdout(output):
-            process_skill(analysis, "codex", review=True)
+            output = StringIO()
+            with redirect_stdout(output):
+                process_skill(analysis, "codex", review=True)
 
-        self.assertEqual(existing.read_text(encoding="utf-8"), before)
-        self.assertIn("Extension preview (not written)", output.getvalue())
-        self.assertIn("+## Extra Insight", output.getvalue())
+            self.assertEqual(existing.read_text(encoding="utf-8"), before)
+            self.assertIn("Extension preview (not written)", output.getvalue())
+            self.assertIn("+## Extra Insight", output.getvalue())
 
     @patch("builtins.input", return_value="y")
     @patch("main.draft_skill_extension")
@@ -210,31 +251,39 @@ class SkillSearchTests(unittest.TestCase):
         draft,
         confirm,
     ) -> None:
-        candidate = load_skill_documents(SKILLS_DIR)[0]
-        existing = candidate.path
-        before = existing.read_text(encoding="utf-8")
-        proposal = before + "\n## Extra Insight\n\n- New reusable detail.\n"
-        match.return_value = ("EXTEND", existing, "Related technique.")
-        draft.return_value = proposal
+        with seeded_library() as (_, existing):
+            before = existing.read_text(encoding="utf-8")
+            proposal = before + "\n## Extra Insight\n\n- New reusable detail.\n"
+            match.return_value = ("EXTEND", existing, "Related technique.")
+            draft.return_value = proposal
 
-        process_skill({"skill_path": ["unused"]}, "codex", apply_extension=True)
+            process_skill({"skill_path": ["unused"]}, "codex", apply_extension=True)
 
-        self.assertEqual(existing.read_text(encoding="utf-8"), proposal)
-        confirm.assert_called_once()
-        existing.write_text(before, encoding="utf-8")
+            self.assertEqual(existing.read_text(encoding="utf-8"), proposal)
+            confirm.assert_called_once()
 
     @patch("main.draft_skill_extension")
     @patch("main.ask_existing_skill_match")
     def test_extension_stays_unmodified_without_apply_flag(self, match, draft) -> None:
-        candidate = load_skill_documents(SKILLS_DIR)[0]
-        existing = candidate.path
-        before = existing.read_text(encoding="utf-8")
-        match.return_value = ("EXTEND", existing, "Related technique.")
-        draft.return_value = before + "\n## Extra Insight\n\n- Preview only.\n"
+        with seeded_library() as (_, existing):
+            before = existing.read_text(encoding="utf-8")
+            match.return_value = ("EXTEND", existing, "Related technique.")
+            draft.return_value = before + "\n## Extra Insight\n\n- Preview only.\n"
 
-        process_skill({"skill_path": ["unused"]}, "codex")
+            process_skill({"skill_path": ["unused"]}, "codex")
 
-        self.assertEqual(existing.read_text(encoding="utf-8"), before)
+            self.assertEqual(existing.read_text(encoding="utf-8"), before)
+
+    @patch("main.ask_existing_skill_match", return_value=("CREATE_NEW", None, "Different insight."))
+    def test_existing_path_collision_does_not_overwrite_skill(self, match) -> None:
+        with seeded_library() as (_, existing):
+            before = existing.read_text(encoding="utf-8")
+            output = StringIO()
+            with redirect_stdout(output):
+                process_skill({"skill_path": ["invariants", "minimum-level"]}, "codex")
+            self.assertEqual(existing.read_text(encoding="utf-8"), before)
+            self.assertIn("PATH COLLISION", output.getvalue())
+            match.assert_called_once()
 
     @patch("main.ask_existing_skill_match")
     def test_matcher_failure_stops_skill_creation(self, match) -> None:

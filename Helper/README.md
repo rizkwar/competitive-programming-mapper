@@ -63,13 +63,15 @@ Only the provider you plan to use needs to be installed.
 ## Problem organization
 
 Store problems below the `Problems/` directory. Each problem gets its own
-folder containing exactly these input files:
+folder containing `problem.md` and `solution.md`. A practice problem can also
+include `practice.json` with progressive hints:
 
 ```text
 Problems/
 ├── mex-multiset/
 │   ├── problem.md
 │   ├── solution.md
+│   ├── practice.json        # optional practice hints and related skill paths
 │   └── analysis.json          # generated after analysis
 ├── problemA/
 │   ├── problem.md
@@ -81,6 +83,43 @@ Problems/
 
 `problem.md` should contain the statement. `solution.md` should contain a
 human-written explanation, editorial, or proof. It should not be source code.
+
+## Practice loop
+
+The practice CLI shows a statement without opening its solution. Start the
+included example and note the session ID it prints:
+
+```powershell
+python practice.py start mex-multiset
+python practice.py hint <session-id>
+python practice.py finish <session-id> --outcome solved --reflection "I reduced feasibility to one critical frequency."
+python practice.py stats
+```
+
+Each `hint` call reveals only the next hint. Sessions and reflections are stored
+locally under the ignored `.practice/sessions/` directory. To add a practice
+plan to another problem, create `practice.json` beside its statement:
+
+```json
+{
+  "skills": ["feasibility/frequency-analysis/critical-resource/multiplicity-driven-construction"],
+  "hints": [
+    "What small statistic controls feasibility?",
+    "Which cases does that statistic divide the problem into?"
+  ]
+}
+```
+
+After finishing and writing `solution.md`, preview an AI proposal:
+
+```powershell
+python practice.py propose <session-id>
+```
+
+The proposal uses the same review flow as `main.py --review`; it does not
+change the skill library. Run `python main.py <problem-name>` to create an
+approved new skill or `python main.py <problem-name> --apply-extension` to
+review and confirm an extension.
 
 ## Basic usage
 
@@ -203,7 +242,13 @@ focused on reusable problem-solving thought processes instead of editorial
 summaries or problem-specific facts.
 
 The taxonomy path is validated to reject traversal, invalid names, and
-implementation-oriented terms such as `precompute`, `iterate`, and `loop`.
+problem-specific names such as variables or complexity labels.
+
+Proposed skill content is checked only for problem-specific framing such as
+references to a particular input, output, variable, or index. Algorithmic
+techniques and reusable actions such as `precompute`, `iterate`, `scan`, `two
+pointers`, `binary lifting`, `suffix array`, and `segment tree` are all treated
+as valid reusable ideas and do not trigger warnings.
 
 ## Evaluation
 
@@ -271,6 +316,7 @@ handling, review previews, and confirmed extension behavior.
 ├── evaluation/           # benchmark case definitions
 ├── tests/                # unit tests
 ├── main.py               # analysis and skill-management CLI
+├── practice.py           # practice sessions, hints, reflection, and proposals
 ├── skill_search.py       # Markdown indexing and candidate ranking
 └── evaluate.py           # benchmark runner
 ```
@@ -280,6 +326,7 @@ Generated files are intentionally kept separate from the source layout:
 ```text
 Problems/<name>/analysis.json   # ignored per-problem AI analysis
 evaluation_results/             # ignored benchmark output
+.practice/sessions/             # ignored personal practice history
 ```
 
 The reusable skill library under `skills/` is indexed at runtime. New skill
