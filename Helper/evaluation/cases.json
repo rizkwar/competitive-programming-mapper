@@ -1,12 +1,8 @@
 {
   "cases": [
     {
-      "id": "minimum-valuation-game",
-      "problem_dir": "Problems/mex-multiset",
-      "expected": {
-        "decision": "REUSE",
-        "path": "game_theory/invariants/valuation_analysis/minimum_level_parity_classification"
-      }
+      "id": "critical-frequency-fixture",
+      "problem_dir": "Helper/evaluation/fixtures/problems/critical-frequency"
     }
   ]
 }

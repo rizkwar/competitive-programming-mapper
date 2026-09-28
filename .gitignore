@@ -28,12 +28,11 @@ evaluation_results/
 # Private practice progress
 .practice/
 
-# Generated analysis output inside problem folders
-Problems/*/analysis.json
-/Problems/*
-!/Problems/mex-multiset/
-/Problems/mex-multiset/*
-!/Problems/mex-multiset/practice.json
+# Personal problem folders in each workflow stage
+/Problem/*/*
+!/Problem/Practice/.gitkeep
+!/Problem/Analyze/.gitkeep
+!/Problem/Completed/.gitkeep
 
 # Local skill library; tests use tracked fixtures instead
 skills/

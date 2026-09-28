@@ -32,7 +32,7 @@ def seeded_library():
             "# Minimum Level\n\n## Questions\n\n- What is the minimum level?\n",
             encoding="utf-8",
         )
-        with patch("main.SKILLS_DIR", skills):
+        with patch("analyze.SKILLS_DIR", skills):
             yield skills, skill
 
 
@@ -162,7 +162,7 @@ class SkillSearchTests(unittest.TestCase):
                 {"decision": "REUSE", "path": None, "reason": "Same skill."}
             )
 
-    @patch("main.subprocess.run")
+    @patch("analyze.subprocess.run")
     def test_copilot_match_sends_a_string_to_standard_input(self, run) -> None:
         with seeded_library() as (skills, _):
             candidate = load_skill_documents(skills)[0]
@@ -180,7 +180,7 @@ class SkillSearchTests(unittest.TestCase):
             self.assertIsNotNone(existing)
             self.assertIsInstance(run.call_args.kwargs["input"], str)
 
-    @patch("main.subprocess.run", side_effect=OSError("CLI unavailable"))
+    @patch("analyze.subprocess.run", side_effect=OSError("CLI unavailable"))
     def test_matcher_failure_does_not_create_a_new_skill(self, run) -> None:
         analysis = {
             "core_idea": "classify states using an invariant",
@@ -193,7 +193,7 @@ class SkillSearchTests(unittest.TestCase):
         self.assertIsNone(existing)
         self.assertEqual(reason, "Matcher failed.")
 
-    @patch("main.ask_existing_skill_match")
+    @patch("analyze.ask_existing_skill_match")
     def test_review_mode_previews_without_creating_a_skill(self, match) -> None:
         match.return_value = ("CREATE_NEW", None, "No match.")
         analysis = {
@@ -221,8 +221,8 @@ class SkillSearchTests(unittest.TestCase):
         self.assertNotIn("## Key Observations", output.getvalue())
         self.assertNotIn("Compress the state to its decisive invariant.", output.getvalue())
 
-    @patch("main.draft_skill_extension")
-    @patch("main.ask_existing_skill_match")
+    @patch("analyze.draft_skill_extension")
+    @patch("analyze.ask_existing_skill_match")
     def test_review_mode_previews_an_extension_without_writing(
         self,
         match,
@@ -243,8 +243,8 @@ class SkillSearchTests(unittest.TestCase):
             self.assertIn("+## Extra Insight", output.getvalue())
 
     @patch("builtins.input", return_value="y")
-    @patch("main.draft_skill_extension")
-    @patch("main.ask_existing_skill_match")
+    @patch("analyze.draft_skill_extension")
+    @patch("analyze.ask_existing_skill_match")
     def test_apply_extension_requires_flag_and_confirmation(
         self,
         match,
@@ -262,8 +262,8 @@ class SkillSearchTests(unittest.TestCase):
             self.assertEqual(existing.read_text(encoding="utf-8"), proposal)
             confirm.assert_called_once()
 
-    @patch("main.draft_skill_extension")
-    @patch("main.ask_existing_skill_match")
+    @patch("analyze.draft_skill_extension")
+    @patch("analyze.ask_existing_skill_match")
     def test_extension_stays_unmodified_without_apply_flag(self, match, draft) -> None:
         with seeded_library() as (_, existing):
             before = existing.read_text(encoding="utf-8")
@@ -274,7 +274,7 @@ class SkillSearchTests(unittest.TestCase):
 
             self.assertEqual(existing.read_text(encoding="utf-8"), before)
 
-    @patch("main.ask_existing_skill_match", return_value=("CREATE_NEW", None, "Different insight."))
+    @patch("analyze.ask_existing_skill_match", return_value=("CREATE_NEW", None, "Different insight."))
     def test_existing_path_collision_does_not_overwrite_skill(self, match) -> None:
         with seeded_library() as (_, existing):
             before = existing.read_text(encoding="utf-8")
@@ -285,7 +285,7 @@ class SkillSearchTests(unittest.TestCase):
             self.assertIn("PATH COLLISION", output.getvalue())
             match.assert_called_once()
 
-    @patch("main.ask_existing_skill_match")
+    @patch("analyze.ask_existing_skill_match")
     def test_matcher_failure_stops_skill_creation(self, match) -> None:
         match.return_value = ("MATCH_FAILED", None, "Matcher failed.")
         analysis = {

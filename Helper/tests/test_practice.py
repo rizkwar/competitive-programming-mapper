@@ -22,7 +22,7 @@ class PracticeTests(unittest.TestCase):
             encoding="utf-8",
         )
         sessions = patch.object(practice, "SESSIONS_DIR", self.root / "sessions")
-        resolver = patch.object(practice, "resolve_problem_directory", return_value=self.problem)
+        resolver = patch.object(practice, "resolve_practice_directory", return_value=self.problem)
         sessions.start()
         resolver.start()
         self.addCleanup(sessions.stop)
@@ -43,21 +43,28 @@ class PracticeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "complete"):
             practice.hint(session["id"])
 
-    def test_ai_proposal_requires_finished_session_and_solution(self) -> None:
+    def test_finishing_points_to_analysis_stage(self) -> None:
         with redirect_stdout(StringIO()):
             session = practice.start("example")
-        with self.assertRaisesRegex(ValueError, "Finish"):
-            practice.propose(session["id"], "codex")
-        with redirect_stdout(StringIO()):
+        output = StringIO()
+        with redirect_stdout(output):
             practice.finish(session["id"], "stuck", "I could not find the invariant.")
-        with self.assertRaisesRegex(ValueError, "solution.md"):
-            practice.propose(session["id"], "codex")
+        self.assertIn("Problem/Analyze", output.getvalue())
+        self.assertIn("python analyze.py", output.getvalue())
+
+    def test_start_without_hint_plan(self) -> None:
+        (self.problem / "practice.json").unlink()
+        output = StringIO()
+        with redirect_stdout(output):
+            session = practice.start("example")
+        self.assertEqual(session["hints_used"], 0)
+        self.assertIn("Hints available: 0", output.getvalue())
 
     def test_rejects_bad_hint_plan(self) -> None:
         (self.problem / "practice.json").write_text(
             json.dumps({"hints": [""]}), encoding="utf-8"
         )
-        with self.assertRaisesRegex(ValueError, "nonempty list"):
+        with self.assertRaisesRegex(ValueError, "nonempty strings"):
             practice.start("example")
 
 

@@ -10,12 +10,9 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from main import (
+from analyze import (
     ROOT,
-    load_analysis,
-    process_skill,
-    resolve_problem_directory,
-    run_analysis,
+    PRACTICE_DIR,
 )
 
 
@@ -29,6 +26,8 @@ def now_utc() -> str:
 
 def load_plan(problem_dir: Path) -> dict:
     plan_file = problem_dir / "practice.json"
+    if not plan_file.exists():
+        return {"skills": [], "hints": []}
     try:
         plan = json.loads(plan_file.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
@@ -36,10 +35,10 @@ def load_plan(problem_dir: Path) -> dict:
     if not isinstance(plan, dict):
         raise ValueError("practice.json must be an object.")
     hints = plan.get("hints")
-    if not isinstance(hints, list) or not hints or not all(
+    if not isinstance(hints, list) or not all(
         isinstance(hint, str) and hint.strip() for hint in hints
     ):
-        raise ValueError("practice.json needs a nonempty list of hints.")
+        raise ValueError("practice.json hints must be a list of nonempty strings.")
     skills = plan.get("skills", [])
     if not isinstance(skills, list) or not all(
         isinstance(skill, str) and skill.strip() for skill in skills
@@ -67,8 +66,17 @@ def save_session(session: dict) -> None:
     path.write_text(json.dumps(session, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
+def resolve_practice_directory(problem_name: str) -> Path:
+    if not problem_name or Path(problem_name).name != problem_name or problem_name in {".", ".."}:
+        raise ValueError("Use a folder name from Problem/Practice.")
+    problem_dir = (PRACTICE_DIR / problem_name).resolve()
+    if problem_dir.parent != PRACTICE_DIR.resolve():
+        raise ValueError("Only folders in Problem/Practice can be practiced.")
+    return problem_dir
+
+
 def start(problem_name: str) -> dict:
-    problem_dir = resolve_problem_directory(problem_name)
+    problem_dir = resolve_practice_directory(problem_name)
     statement_file = problem_dir / "problem.md"
     if not statement_file.is_file():
         raise ValueError(f"Missing problem statement: {statement_file}")
@@ -87,7 +95,7 @@ def start(problem_name: str) -> dict:
     print(statement)
     print(f"\nSession: {session['id']}")
     print(f"Hints available: {len(plan['hints'])}")
-    print(f"Next: python practice.py hint {session['id']}")
+    print(f"Next: python -m Helper.practice hint {session['id']}")
     return session
 
 
@@ -124,23 +132,8 @@ def finish(session_id: str, outcome: str, reflection: str) -> dict:
         print("Related skills:")
         for skill in plan["skills"]:
             print(f"  {skill}")
-    if (Path(session["problem_dir"]) / "solution.md").is_file():
-        print(f"Propose a skill: python practice.py propose {session_id}")
+    print("Next: move this problem folder to Problem/Analyze, add editorial.md, then run python analyze.py")
     return session
-
-
-def propose(session_id: str, provider: str) -> None:
-    session = load_session(session_id)
-    if session["completed_at"] is None:
-        raise ValueError("Finish the practice session before requesting AI analysis.")
-    problem_dir = Path(session["problem_dir"])
-    if not (problem_dir / "solution.md").is_file():
-        raise ValueError("Add solution.md before requesting AI analysis.")
-    output_file = problem_dir / "analysis.json"
-    run_analysis(provider, problem_dir, output_file)
-    analysis = load_analysis(output_file, provider)
-    process_skill(analysis, provider, review=True)
-    print(f"To apply an approved new skill, run: python main.py \"{problem_dir}\"")
 
 
 def stats() -> dict:
@@ -178,9 +171,6 @@ def main() -> None:
     finish_parser.add_argument("session_id")
     finish_parser.add_argument("--outcome", choices=("solved", "stuck"), required=True)
     finish_parser.add_argument("--reflection", required=True)
-    propose_parser = commands.add_parser("propose", help="Preview an AI skill proposal after practice.")
-    propose_parser.add_argument("session_id")
-    propose_parser.add_argument("--provider", choices=("codex", "copilot"), default="codex")
     commands.add_parser("stats", help="Show local practice totals.")
     args = parser.parse_args()
     try:
@@ -190,8 +180,6 @@ def main() -> None:
             hint(args.session_id)
         elif args.command == "finish":
             finish(args.session_id, args.outcome, args.reflection)
-        elif args.command == "propose":
-            propose(args.session_id, args.provider)
         else:
             stats()
     except ValueError as error:

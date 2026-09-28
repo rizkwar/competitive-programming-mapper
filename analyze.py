@@ -18,7 +18,11 @@ from Helper.skill_search import (
 
 
 ROOT = Path(__file__).resolve().parent
-PROBLEMS_DIR = ROOT / "Problems"
+HELPER_DIR = ROOT / "Helper"
+PROBLEMS_DIR = ROOT / "Problem"
+PRACTICE_DIR = PROBLEMS_DIR / "Practice"
+ANALYZE_DIR = PROBLEMS_DIR / "Analyze"
+COMPLETED_DIR = PROBLEMS_DIR / "Completed"
 SKILL_SEGMENT_RE = re.compile(r"^[a-z0-9_][a-z0-9_-]*$")
 TAXONOMY_WORD_RE = re.compile(r"[^a-z0-9_-]+")
 KNOWN_BROAD_CATEGORIES = {
@@ -54,9 +58,9 @@ SKILL_SPECIFICITY_WARNINGS = (
     ("index j", "problem-specific index reference"),
 )
 
-PROMPT_FILE = ROOT / "prompts" / "analysis.md"
-SCHEMA_FILE = ROOT / "config" / "analysis_schema.json"
-MATCH_SCHEMA_FILE = ROOT / "config" / "match_schema.json"
+PROMPT_FILE = HELPER_DIR / "prompts" / "analysis.md"
+SCHEMA_FILE = HELPER_DIR / "config" / "analysis_schema.json"
+MATCH_SCHEMA_FILE = HELPER_DIR / "config" / "match_schema.json"
 SKILLS_DIR = ROOT / "skills"
 
 
@@ -70,13 +74,19 @@ def find_cli(name: str) -> str:
     return shutil.which(name) or name
 
 
+def editorial_file(problem_dir: Path) -> Path:
+    """Accept editorial.md for new work and solution.md for older problems."""
+    editorial = problem_dir / "editorial.md"
+    return editorial if editorial.is_file() else problem_dir / "solution.md"
+
+
 def validate_files(problem_dir: Path) -> None:
     required_files = [
         PROMPT_FILE,
         SCHEMA_FILE,
         MATCH_SCHEMA_FILE,
         problem_dir / "problem.md",
-        problem_dir / "solution.md",
+        editorial_file(problem_dir),
     ]
 
     for file in required_files:
@@ -87,12 +97,13 @@ def validate_files(problem_dir: Path) -> None:
 
 
 def resolve_problem_directory(value: str) -> Path:
-    """Resolve a direct path or a named problem inside the Problems directory."""
-    requested = Path(value)
-    if requested.exists():
-        return requested.resolve()
-
-    return (PROBLEMS_DIR / value).resolve()
+    """Resolve a problem name only inside Problem/Analyze."""
+    if not value or Path(value).name != value or value in {".", ".."}:
+        raise ValueError("Use a folder name from Problem/Analyze.")
+    requested = (ANALYZE_DIR / value).resolve()
+    if requested.parent != ANALYZE_DIR.resolve():
+        raise ValueError("Only folders in Problem/Analyze can be analyzed.")
+    return requested
 
 
 def extract_json_response(response: str) -> dict:
@@ -205,7 +216,7 @@ def validate_match_response(value: dict) -> dict:
 
 def run_codex(problem_dir: Path, output_file: Path) -> None:
     problem_file = problem_dir / "problem.md"
-    solution_file = problem_dir / "solution.md"
+    solution_file = editorial_file(problem_dir)
 
     command = [
         "codex",
@@ -217,10 +228,10 @@ def run_codex(problem_dir: Path, output_file: Path) -> None:
         "-o",
         str(output_file),
         (
-            "Read prompts/analysis.md first. "
+            "Read Helper/prompts/analysis.md first. "
             f"Then analyze {problem_file.as_posix()} and "
             f"{solution_file.as_posix()} according to the instructions "
-            "in prompts/analysis.md. Return the required JSON."
+            "in Helper/prompts/analysis.md. Return the required JSON."
         ),
     ]
 
@@ -256,7 +267,7 @@ PROBLEM:
 {(problem_dir / "problem.md").read_text(encoding="utf-8")}
 
 SOLUTION:
-{(problem_dir / "solution.md").read_text(encoding="utf-8")}
+{editorial_file(problem_dir).read_text(encoding="utf-8")}
 
 Do not use tools. Return only one JSON object that conforms to the schema.
 """
@@ -714,7 +725,7 @@ def process_skill(
     provider: str,
     review: bool = False,
     apply_extension: bool = False,
-) -> None:
+) -> str:
     skill_file = get_skill_path(analysis)
 
     print()
@@ -727,15 +738,17 @@ def process_skill(
         print("No skill was created. Rerun after reviewing the matcher error.")
         if reason:
             print(f"Reason: {reason}")
-        return
+        return "MATCH_FAILED"
 
     if existing is not None:
         print(f"{decision} EXISTING SKILL")
         print(existing)
         if reason:
             print(f"Reason: {reason}")
-        if (review or apply_extension) and decision == "EXTEND":
+        if decision == "EXTEND":
             proposal = draft_skill_extension(analysis, existing, provider)
+            if proposal is None:
+                return "EXTEND_FAILED"
             if proposal is not None:
                 print()
                 print("Extension proposal")
@@ -756,14 +769,14 @@ def process_skill(
                         print("Extension not applied.")
                 else:
                     print("Extension preview (not written)")
-        return
+        return decision
 
     print("CREATE NEW SKILL")
     print(skill_file)
     if skill_file.exists():
         print("PATH COLLISION: This path already has a different skill.")
         print("Choose a distinct taxonomy path before creating the new skill.")
-        return
+        return "PATH_COLLISION"
     proposed_content = skill_content(analysis, skill_file)
     print_skill_quality_warnings(proposed_content)
 
@@ -777,79 +790,88 @@ def process_skill(
             "/dev/null",
             skill_file.relative_to(ROOT).as_posix(),
         )
-        return
+        return "CREATE_NEW"
 
     created = create_skill(analysis)
 
     print()
     print("Created skill:")
     print(created)
+    return "CREATE_NEW"
+
+
+def analyze_one(
+    problem_dir: Path,
+    provider: str,
+    *,
+    review: bool = False,
+    apply_extension: bool = False,
+) -> bool:
+    """Analyze one staged folder, then archive it only after successful handling."""
+    problem_dir = problem_dir.resolve()
+    if problem_dir.parent != ANALYZE_DIR.resolve() or not problem_dir.is_dir():
+        raise ValueError("Only problem folders in Problem/Analyze can be analyzed.")
+    destination = COMPLETED_DIR / problem_dir.name
+    if destination.exists():
+        raise FileExistsError(f"Completed problem already exists: {destination}")
+    validate_files(problem_dir)
+
+    print(f"\nAnalyzing: {problem_dir.name}")
+    output_file = problem_dir / "analysis.json"
+    run_analysis(provider, problem_dir, output_file)
+    analysis = load_analysis(output_file, provider)
+    decision = process_skill(analysis, provider, review, apply_extension)
+    if decision in {"MATCH_FAILED", "PATH_COLLISION", "EXTEND_FAILED"}:
+        print(f"Kept in Problem/Analyze: {problem_dir.name}")
+        return False
+    if review:
+        print(f"Review only; kept in Problem/Analyze: {problem_dir.name}")
+        return True
+
+    COMPLETED_DIR.mkdir(parents=True, exist_ok=True)
+    if destination.exists():
+        raise FileExistsError(f"Completed problem already exists: {destination}")
+    problem_dir.rename(destination)
+    print(f"Completed: {destination}")
+    return True
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Analyze a problem into a reusable competitive-programming skill."
+        description="Analyze Problem/Analyze and move successful folders to Problem/Completed."
     )
-    parser.add_argument("problem_directory")
-    parser.add_argument(
-        "--provider",
-        choices=("codex", "copilot"),
-        default="codex",
-        help="AI CLI to use (default: codex).",
-    )
-    parser.add_argument(
-        "--review",
-        action="store_true",
-        help="Preview the proposed skill change without writing under skills/.",
-    )
-    parser.add_argument(
-        "--apply-extension",
-        action="store_true",
-        help="Show and explicitly confirm an EXTEND proposal before writing it.",
-    )
+    parser.add_argument("--name", help="Analyze one named folder in Problem/Analyze.")
+    parser.add_argument("--provider", choices=("codex", "copilot"), default="codex")
+    parser.add_argument("--review", action="store_true", help="Preview skills and keep folders in Analyze.")
+    parser.add_argument("--apply-extension", action="store_true", help="Ask before updating an existing skill.")
     args = parser.parse_args()
 
-    problem_dir = resolve_problem_directory(args.problem_directory)
+    try:
+        if args.name:
+            problems = [resolve_problem_directory(args.name)]
+        else:
+            problems = sorted(path for path in ANALYZE_DIR.iterdir() if path.is_dir()) if ANALYZE_DIR.exists() else []
+    except ValueError as error:
+        parser.error(str(error))
+    if not problems:
+        print("No problems in Problem/Analyze.")
+        return
 
-    if not problem_dir.exists():
-        print("ERROR: Directory does not exist:")
-        print(f"  {problem_dir}")
+    succeeded = 0
+    failed = 0
+    for problem_dir in problems:
+        try:
+            if analyze_one(problem_dir, args.provider, review=args.review, apply_extension=args.apply_extension):
+                succeeded += 1
+            else:
+                failed += 1
+        except (Exception, SystemExit) as error:
+            failed += 1
+            print(f"ERROR: {problem_dir.name}: {error}", file=sys.stderr)
+            print("Folder remains in Problem/Analyze for retry.", file=sys.stderr)
+    print(f"Processed: {succeeded} succeeded, {failed} failed.")
+    if failed:
         sys.exit(1)
-
-    if not problem_dir.is_dir():
-        print("ERROR: Path is not a directory:")
-        print(f"  {problem_dir}")
-        sys.exit(1)
-
-    validate_files(problem_dir)
-
-    output_file = problem_dir / "analysis.json"
-
-    print("========================================")
-    print(" Competitive Programming Skill Analyzer")
-    print("========================================")
-    print()
-
-    run_analysis(
-        args.provider,
-        problem_dir,
-        output_file,
-    )
-
-    print("Reading analysis...")
-
-    analysis = load_analysis(output_file, args.provider)
-
-    print()
-    print("Analysis saved to:")
-    print(f"  {output_file}")
-
-    process_skill(
-        analysis,
-        args.provider,
-        args.review,
-        args.apply_extension,
-    )
 
 
 if __name__ == "__main__":
