@@ -36,6 +36,31 @@ your source code as the editorial.
    python analyze.py
    ```
 
+### Compile and test samples
+
+Save sample input and expected output beside the problem:
+
+```text
+Problem/Practice/my-problem/samples/1.in
+Problem/Practice/my-problem/samples/1.out
+Problem/Practice/my-problem/samples/2.in
+Problem/Practice/my-problem/samples/2.out
+```
+
+If your code is in `Main-Field/A.cpp`, compile it and run every `.in` sample
+with one command from the repository root:
+
+```powershell
+python -m Helper.run A my-problem
+```
+
+The runner uses `g++`, allows two seconds per sample, and compares output as
+whitespace-separated tokens. It reports `PASS`, `WRONG ANSWER`, `RUNTIME ERROR`,
+or `TIMEOUT`; a sample pass is only a sample check. Use `--timeout 5` to allow
+five seconds. For problems with multiple valid outputs, omit the `.out` file or
+use `--no-compare` to see your output without judging it. After moving the
+problem, add `--stage Analyze` or `--stage Completed` to test it there.
+
 The command processes **every problem folder directly inside**
 `Problem/Analyze/`. It creates `analysis.json`, handles the skill decision, and
 moves each successfully processed folder to `Problem/Completed/`. Failed
