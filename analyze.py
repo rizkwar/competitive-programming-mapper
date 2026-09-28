@@ -61,6 +61,8 @@ SKILL_SPECIFICITY_WARNINGS = (
 PROMPT_FILE = HELPER_DIR / "prompts" / "analysis.md"
 SCHEMA_FILE = HELPER_DIR / "config" / "analysis_schema.json"
 MATCH_SCHEMA_FILE = HELPER_DIR / "config" / "match_schema.json"
+VERIFICATION_PROMPT_FILE = HELPER_DIR / "prompts" / "verification.md"
+VERIFICATION_SCHEMA_FILE = HELPER_DIR / "config" / "verification_schema.json"
 SKILLS_DIR = ROOT / "skills"
 
 
@@ -85,6 +87,8 @@ def validate_files(problem_dir: Path) -> None:
         PROMPT_FILE,
         SCHEMA_FILE,
         MATCH_SCHEMA_FILE,
+        VERIFICATION_PROMPT_FILE,
+        VERIFICATION_SCHEMA_FILE,
         problem_dir / "problem.md",
         editorial_file(problem_dir),
     ]
@@ -211,6 +215,31 @@ def validate_match_response(value: dict) -> dict:
         raise ValueError("CREATE_NEW responses must use a null path.")
     if value["decision"] in {"REUSE", "EXTEND"} and not value["path"]:
         raise ValueError(f"{value['decision']} responses must provide a path.")
+    return value
+
+
+def validate_verification_response(value: dict) -> dict:
+    if set(value) != {"status", "checks", "issues"}:
+        raise ValueError("Verification needs status, checks, and issues only.")
+    if not isinstance(value["status"], str) or value["status"] not in {"PASS", "FAIL", "UNCERTAIN"}:
+        raise ValueError("Verification status must be PASS, FAIL, or UNCERTAIN.")
+    if not isinstance(value["checks"], list) or not value["checks"] or not all(
+        isinstance(check, str) and check.strip() for check in value["checks"]
+    ):
+        raise ValueError("Verification needs at least one described check.")
+    if not isinstance(value["issues"], list):
+        raise ValueError("Verification issues must be a list.")
+    for issue in value["issues"]:
+        if not isinstance(issue, dict) or set(issue) != {"claim", "reason", "counterexample"}:
+            raise ValueError("Each verification issue needs claim, reason, and counterexample.")
+        if not all(isinstance(issue[field], str) for field in issue):
+            raise ValueError("Verification issue fields must be strings.")
+        if not issue["claim"].strip() or not issue["reason"].strip():
+            raise ValueError("Verification issues need a claim and reason.")
+    if value["status"] == "PASS" and value["issues"]:
+        raise ValueError("PASS cannot have unresolved issues.")
+    if value["status"] != "PASS" and not value["issues"]:
+        raise ValueError("FAIL or UNCERTAIN needs an issue.")
     return value
 
 
@@ -720,9 +749,91 @@ def print_diff(before: str, after: str, from_file: str, to_file: str) -> None:
     print(rendered if rendered else "(No content changes proposed.)")
 
 
+def verify_skill_claims(
+    analysis: dict,
+    problem_dir: Path,
+    provider: str,
+    decision: str,
+    proposed_content: str = "",
+    previous_content: str = "",
+) -> bool:
+    """Review claims in a separate AI call and keep an inspectable report."""
+    prompt = f"""{VERIFICATION_PROMPT_FILE.read_text(encoding='utf-8')}
+
+MODE: {decision}
+
+PROBLEM:
+{(problem_dir / 'problem.md').read_text(encoding='utf-8')}
+
+EDITORIAL:
+{editorial_file(problem_dir).read_text(encoding='utf-8')}
+
+ANALYSIS:
+{json.dumps(analysis, indent=2, ensure_ascii=False)}
+
+PREVIOUS SKILL (only relevant for EXTEND):
+{previous_content}
+
+PROPOSED SKILL (empty for REUSE):
+{proposed_content}
+
+Do not use tools. Return only one JSON object.
+"""
+    report_file = problem_dir / "verification.json"
+    with tempfile.NamedTemporaryFile(
+        prefix="skill-verification-", suffix=".json", dir=ROOT, delete=False
+    ) as handle:
+        output_file = Path(handle.name)
+
+    try:
+        if provider == "codex":
+            subprocess.run(
+                [
+                    "codex", "exec", "--sandbox", "read-only", "--output-schema",
+                    str(VERIFICATION_SCHEMA_FILE), "-o", str(output_file), "-",
+                ],
+                cwd=ROOT, check=True, capture_output=True, text=True,
+                encoding="utf-8", timeout=240, input=prompt,
+            )
+            result = extract_json_response(output_file.read_text(encoding="utf-8"))
+        else:
+            completed = subprocess.run(
+                [find_cli("copilot"), "--silent", "--no-ask-user", "--output-format=text"],
+                cwd=ROOT, check=True, capture_output=True, text=True,
+                encoding="utf-8", timeout=240,
+                input=f"{prompt}\nREQUIRED JSON SCHEMA:\n{VERIFICATION_SCHEMA_FILE.read_text(encoding='utf-8')}",
+            )
+            result = extract_json_response(completed.stdout)
+        report = validate_verification_response(result)
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired,
+            json.JSONDecodeError, ValueError) as error:
+        report = {
+            "status": "ERROR",
+            "checks": [],
+            "issues": [{
+                "claim": "Verification run",
+                "reason": str(error),
+                "counterexample": "",
+            }],
+        }
+    finally:
+        output_file.unlink(missing_ok=True)
+
+    report_file.write_text(
+        json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+    print(f"Claim review: {report['status']} ({report_file})")
+    for issue in report["issues"]:
+        print(f"- {issue['claim']}: {issue['reason']}")
+        if issue["counterexample"]:
+            print(f"  Counterexample: {issue['counterexample']}")
+    return report["status"] == "PASS"
+
+
 def process_skill(
     analysis: dict,
     provider: str,
+    problem_dir: Path,
     review: bool = False,
     apply_extension: bool = False,
 ) -> str:
@@ -760,6 +871,12 @@ def process_skill(
                     existing.relative_to(ROOT).as_posix(),
                     existing.relative_to(ROOT).as_posix(),
                 )
+                if not verify_skill_claims(
+                    analysis, problem_dir, provider, "EXTEND", proposal,
+                    existing.read_text(encoding="utf-8"),
+                ):
+                    print("Extension not applied; review verification.json.")
+                    return "VERIFY_FAILED"
                 if apply_extension:
                     answer = input("\nApply this extension? [y/N]: ").strip().lower()
                     if answer in {"y", "yes"}:
@@ -769,6 +886,9 @@ def process_skill(
                         print("Extension not applied.")
                 else:
                     print("Extension preview (not written)")
+        elif not verify_skill_claims(analysis, problem_dir, provider, "REUSE"):
+            print("Analysis not archived; review verification.json.")
+            return "VERIFY_FAILED"
         return decision
 
     print("CREATE NEW SKILL")
@@ -779,6 +899,11 @@ def process_skill(
         return "PATH_COLLISION"
     proposed_content = skill_content(analysis, skill_file)
     print_skill_quality_warnings(proposed_content)
+    if not verify_skill_claims(
+        analysis, problem_dir, provider, "CREATE_NEW", proposed_content
+    ):
+        print("Skill not created; review verification.json.")
+        return "VERIFY_FAILED"
 
     if review:
         print()
@@ -820,8 +945,8 @@ def analyze_one(
     output_file = problem_dir / "analysis.json"
     run_analysis(provider, problem_dir, output_file)
     analysis = load_analysis(output_file, provider)
-    decision = process_skill(analysis, provider, review, apply_extension)
-    if decision in {"MATCH_FAILED", "PATH_COLLISION", "EXTEND_FAILED"}:
+    decision = process_skill(analysis, provider, problem_dir, review, apply_extension)
+    if decision in {"MATCH_FAILED", "PATH_COLLISION", "EXTEND_FAILED", "VERIFY_FAILED"}:
         print(f"Kept in Problem/Analyze: {problem_dir.name}")
         return False
     if review:

@@ -79,6 +79,14 @@ python analyze.py --provider copilot
 Extensions are shown as previews; use `--apply-extension` to review and confirm
 updating an existing skill. Reused skills are left unchanged.
 
+Before creating or updating a skill, the analyzer runs a separate claim review
+against the statement and editorial, including small counterexample attempts.
+The result is saved as `verification.json` beside `analysis.json`. A failed,
+uncertain, or unavailable review leaves the problem in `Analyze` and does not
+write the proposed skill. Read the reported claim, correct any mistaken source
+text or reasoning, and rerun the analyzer. The review helps catch mistakes but
+cannot prove a skill correct.
+
 Only folders under `Problem/Analyze/` can be passed to the analyzer. It cannot
 analyze a problem directly from `Practice` or `Completed`.
 

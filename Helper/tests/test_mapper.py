@@ -37,6 +37,14 @@ def seeded_library():
 
 
 class SkillSearchTests(unittest.TestCase):
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.problem_dir = Path(temporary.name)
+        verifier = patch("analyze.verify_skill_claims", return_value=True)
+        verifier.start()
+        self.addCleanup(verifier.stop)
+
     def test_retrieves_semantically_related_existing_skill(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             skills = Path(directory)
@@ -210,7 +218,7 @@ class SkillSearchTests(unittest.TestCase):
 
         output = StringIO()
         with redirect_stdout(output):
-            process_skill(analysis, "codex", review=True)
+            process_skill(analysis, "codex", self.problem_dir, review=True)
 
         self.assertFalse(target.exists())
         self.assertIn("New-skill preview (not written)", output.getvalue())
@@ -236,7 +244,7 @@ class SkillSearchTests(unittest.TestCase):
 
             output = StringIO()
             with redirect_stdout(output):
-                process_skill(analysis, "codex", review=True)
+                process_skill(analysis, "codex", self.problem_dir, review=True)
 
             self.assertEqual(existing.read_text(encoding="utf-8"), before)
             self.assertIn("Extension preview (not written)", output.getvalue())
@@ -257,7 +265,7 @@ class SkillSearchTests(unittest.TestCase):
             match.return_value = ("EXTEND", existing, "Related technique.")
             draft.return_value = proposal
 
-            process_skill({"skill_path": ["unused"]}, "codex", apply_extension=True)
+            process_skill({"skill_path": ["unused"]}, "codex", self.problem_dir, apply_extension=True)
 
             self.assertEqual(existing.read_text(encoding="utf-8"), proposal)
             confirm.assert_called_once()
@@ -270,7 +278,7 @@ class SkillSearchTests(unittest.TestCase):
             match.return_value = ("EXTEND", existing, "Related technique.")
             draft.return_value = before + "\n## Extra Insight\n\n- Preview only.\n"
 
-            process_skill({"skill_path": ["unused"]}, "codex")
+            process_skill({"skill_path": ["unused"]}, "codex", self.problem_dir)
 
             self.assertEqual(existing.read_text(encoding="utf-8"), before)
 
@@ -280,7 +288,7 @@ class SkillSearchTests(unittest.TestCase):
             before = existing.read_text(encoding="utf-8")
             output = StringIO()
             with redirect_stdout(output):
-                process_skill({"skill_path": ["invariants", "minimum-level"]}, "codex")
+                process_skill({"skill_path": ["invariants", "minimum-level"]}, "codex", self.problem_dir)
             self.assertEqual(existing.read_text(encoding="utf-8"), before)
             self.assertIn("PATH COLLISION", output.getvalue())
             match.assert_called_once()
@@ -299,7 +307,7 @@ class SkillSearchTests(unittest.TestCase):
 
         output = StringIO()
         with redirect_stdout(output):
-            process_skill(analysis, "codex")
+            process_skill(analysis, "codex", self.problem_dir)
 
         self.assertFalse(target.exists())
         self.assertIn("No skill was created.", output.getvalue())
