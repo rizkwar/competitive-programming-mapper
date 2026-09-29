@@ -1,0 +1,33 @@
+{
+  "type": "object",
+  "properties": {
+    "observations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "evidence": {"type": "string"},
+          "what_it_shows": {"type": "string"}
+        },
+        "required": ["evidence", "what_it_shows"],
+        "additionalProperties": false
+      }
+    },
+    "skill_connections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "skill_index": {"type": "integer", "minimum": 1},
+          "evidence": {"type": "string"},
+          "connection": {"type": "string"},
+          "practice_task": {"type": "string"}
+        },
+        "required": ["skill_index", "evidence", "connection", "practice_task"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["observations", "skill_connections"],
+  "additionalProperties": false
+}

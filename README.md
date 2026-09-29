@@ -38,6 +38,8 @@ sections before they can be saved.
 3. When finished, move the problem folder from `Problem/Practice/` to
    `Problem/Analyze/`. Add `editorial.md` containing your explanation or proof.
    An existing `solution.md` is also accepted.
+   Optionally include `attempt.md` with what you tried, where you got stuck,
+   and which ideas you could not justify.
 4. From the repository root, run:
 
    ```powershell
@@ -95,6 +97,13 @@ A failed, uncertain, or unavailable review leaves the problem in `Analyze`
 and does not write the proposed skill. Read the reported claim, correct any
 mistaken source text or reasoning, and rerun the analyzer. The review helps
 catch mistakes but cannot prove a skill correct.
+
+If `attempt.md` has notes, the analyzer also writes `learning_review.md` and
+`attempt_review.json` in the problem folder. The review quotes your notes,
+connects recorded attempts to numbered skills, and suggests a specific
+practice task. It will not claim you missed an idea just because you did not
+mention it. A review with an unsupported quote stops processing so you can
+inspect the attempt. With no attempt notes, this extra step is skipped.
 
 Only folders under `Problem/Analyze/` can be passed to the analyzer. It cannot
 analyze a problem directly from `Practice` or `Completed`.

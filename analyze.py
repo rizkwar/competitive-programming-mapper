@@ -10,6 +10,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from Helper.attempt_review import review_attempt_if_present
 from Helper.skill_search import (
     analysis_query,
     candidate_context,
@@ -1096,6 +1097,19 @@ def analyze_one(
     output_file = problem_dir / "analysis.json"
     run_analysis(provider, problem_dir, output_file)
     analysis = load_analysis(output_file, provider)
+    attempt_review = review_attempt_if_present(
+        problem_dir, analysis, provider, ROOT, find_cli("copilot")
+    )
+    if attempt_review is not None:
+        analysis["learner_review"] = {
+            "data": "attempt_review.json",
+            "summary": "learning_review.md",
+        }
+        output_file.write_text(
+            json.dumps(analysis, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        print(f"Learning review: {problem_dir / 'learning_review.md'}")
     resolved = process_skills(
         analysis, provider, problem_dir,
         review=review, apply_extension=apply_extension,
