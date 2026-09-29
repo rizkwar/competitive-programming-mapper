@@ -46,21 +46,32 @@ def evaluate_case(case: dict, provider: str, results_dir: Path) -> dict:
     run_analysis(provider, problem_dir, analysis_file)
     analysis = load_analysis(analysis_file, provider)
 
-    candidates = rank_candidates(
-        analysis,
-        load_skill_documents(SKILLS_DIR),
-    )
-    proposed_file = get_skill_path(analysis)
-    decision, selected, reason = ask_existing_skill_match(analysis, provider)
+    documents = load_skill_documents(SKILLS_DIR)
+    skill_results = []
+    for index, skill in enumerate(analysis["skills"], 1):
+        candidates = rank_candidates(skill, documents)
+        proposed_file = get_skill_path(skill)
+        decision, selected, reason = ask_existing_skill_match(skill, provider)
+        skill_results.append({
+            "skill_index": index,
+            "decision": decision,
+            "path": relative_skill_path(selected),
+            "reason": reason,
+            "proposed_skill_path": relative_skill_path(proposed_file),
+            "retrieved_candidates": [
+                {"path": candidate.relative_path, "title": candidate.title}
+                for candidate in candidates
+            ],
+        })
 
     expected = case.get("expected")
-    actual = {
-        "decision": decision,
-        "path": relative_skill_path(selected),
-    }
+    actual = {"skills": [
+        {"decision": item["decision"], "path": item["path"]}
+        for item in skill_results
+    ]}
     passed = None
     if expected is not None:
-        passed = all(actual.get(key) == value for key, value in expected.items())
+        passed = actual == expected
 
     result = {
         "id": case_id,
@@ -69,15 +80,7 @@ def evaluate_case(case: dict, provider: str, results_dir: Path) -> dict:
         "expected": expected,
         "actual": actual,
         "passed": passed,
-        "reason": reason,
-        "proposed_skill_path": relative_skill_path(proposed_file),
-        "retrieved_candidates": [
-            {
-                "path": candidate.relative_path,
-                "title": candidate.title,
-            }
-            for candidate in candidates
-        ],
+        "skill_results": skill_results,
         "analysis": analysis,
     }
     (case_dir / "result.json").write_text(
@@ -124,8 +127,10 @@ def main() -> None:
         status = "UNLABELED" if result["passed"] is None else (
             "PASS" if result["passed"] else "FAIL"
         )
-        print(f"{status}: {result['id']} → {result['actual']['decision']} "
-              f"{result['actual']['path'] or ''}")
+        decisions = ", ".join(
+            item["decision"] for item in result["actual"]["skills"]
+        )
+        print(f"{status}: {result['id']} → {decisions}")
 
 
 if __name__ == "__main__":

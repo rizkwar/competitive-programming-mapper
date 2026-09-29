@@ -8,13 +8,21 @@ Problem/Practice/<problem>/problem.md
              ↓ solve it in Main-Field/
 Problem/Analyze/<problem>/problem.md + editorial.md
              ↓ python analyze.py
-Problem/Completed/<problem>/analysis.json   +   skills/<topic>.md
+Problem/Completed/<problem>/analysis.json   +   skills/<technique>.md
 ```
 
 The analyzer reads the problem and your editorial, extracts general reasoning
-patterns with an AI CLI, searches the local skill library, and decides whether
-to reuse an existing skill, extend one, or create a new note. It does not use
-your source code as the editorial.
+patterns with an AI CLI, then matches each distinct technique against the local
+skill library. A problem can reuse, extend, or create several skill notes. Its
+`analysis.json` records the solution flow and points each step to a numbered
+skill; `resolved_skills` records the notes actually matched or created. It does
+not use your source code as the editorial.
+
+New skill notes teach the technique through recognition clues, questions,
+steps for applying it, an explanation of why it works, and cases where the
+argument fails. Concise formulas are allowed when they clarify the reasoning.
+Existing notes remain readable; extensions must include these teaching
+sections before they can be saved.
 
 ## Requirements
 
@@ -62,8 +70,9 @@ use `--no-compare` to see your output without judging it. After moving the
 problem, add `--stage Analyze` or `--stage Completed` to test it there.
 
 The command processes **every problem folder directly inside**
-`Problem/Analyze/`. It creates `analysis.json`, handles the skill decision, and
-moves each successfully processed folder to `Problem/Completed/`. Failed
+`Problem/Analyze/`. It creates `analysis.json`, handles every skill decision,
+and moves each successfully processed folder to `Problem/Completed/`. All skill
+proposals for a problem are checked before any note is written. Failed
 problems remain in `Problem/Analyze/` so you can fix and retry them. An
 existing folder of the same name in `Completed` is never overwritten.
 
@@ -81,11 +90,11 @@ updating an existing skill. Reused skills are left unchanged.
 
 Before creating or updating a skill, the analyzer runs a separate claim review
 against the statement and editorial, including small counterexample attempts.
-The result is saved as `verification.json` beside `analysis.json`. A failed,
-uncertain, or unavailable review leaves the problem in `Analyze` and does not
-write the proposed skill. Read the reported claim, correct any mistaken source
-text or reasoning, and rerun the analyzer. The review helps catch mistakes but
-cannot prove a skill correct.
+Each result is saved as `verification-<skill-index>.json` beside `analysis.json`.
+A failed, uncertain, or unavailable review leaves the problem in `Analyze`
+and does not write the proposed skill. Read the reported claim, correct any
+mistaken source text or reasoning, and rerun the analyzer. The review helps
+catch mistakes but cannot prove a skill correct.
 
 Only folders under `Problem/Analyze/` can be passed to the analyzer. It cannot
 analyze a problem directly from `Practice` or `Completed`.

@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 from Helper.skill_search import (
@@ -53,9 +54,6 @@ SKILL_SPECIFICITY_WARNINGS = (
     ("in this problem", "problem-specific framing"),
     ("given input", "problem-specific input description"),
     ("output", "problem-specific output description"),
-    ("variable", "problem-specific variable reference"),
-    ("index i", "problem-specific index reference"),
-    ("index j", "problem-specific index reference"),
 )
 
 PROMPT_FILE = HELPER_DIR / "prompts" / "analysis.md"
@@ -171,32 +169,52 @@ def validate_schema_response(
 
 
 def validate_analysis_response(value: dict) -> dict:
-    validate_schema_response(
-        value,
-        required=(
-            "core_idea",
-            "key_observations",
-            "reasoning_patterns",
-            "questions",
-            "skill_path",
-            "probably_related",
-        ),
-        list_fields=(
-            "key_observations",
-            "reasoning_patterns",
-            "questions",
-            "skill_path",
-            "probably_related",
-            "signals",
-        ),
-        string_fields=("core_idea",),
-        optional_fields=("signals",),
+    if not isinstance(value, dict) or set(value) != {
+        "core_idea", "key_observations", "solution_flow", "skills"
+    }:
+        raise ValueError(
+            "Analysis needs core_idea, key_observations, solution_flow, and skills only."
+        )
+    if not isinstance(value["core_idea"], str) or not value["core_idea"].strip():
+        raise ValueError("Analysis core_idea must be a nonempty string.")
+    if not isinstance(value["key_observations"], list) or not all(
+        isinstance(item, str) for item in value["key_observations"]
+    ):
+        raise ValueError("Analysis key_observations must be a list of strings.")
+    skills = value["skills"]
+    if not isinstance(skills, list) or not skills:
+        raise ValueError("Analysis needs at least one reusable skill.")
+    skill_fields = (
+        "skill_path", "signals", "questions", "how_to_apply",
+        "why_it_works", "when_it_fails", "reasoning_patterns", "probably_related",
     )
-    if not value["core_idea"].strip():
-        raise ValueError("AI response field 'core_idea' must not be empty.")
-    for field in ("questions", "reasoning_patterns"):
-        if not any(item.strip() for item in value[field]):
-            raise ValueError(f"AI response field '{field}' needs a useful item.")
+    for index, skill in enumerate(skills, 1):
+        if not isinstance(skill, dict):
+            raise ValueError(f"Skill {index} must be an object.")
+        try:
+            validate_schema_response(
+                skill, required=skill_fields, list_fields=skill_fields
+            )
+        except ValueError as error:
+            raise ValueError(f"Skill {index}: {error}") from error
+        for field in skill_fields[:-1]:
+            if not any(item.strip() for item in skill[field]):
+                raise ValueError(f"Skill {index} field '{field}' needs a useful item.")
+    flow = value["solution_flow"]
+    if not isinstance(flow, list) or not flow:
+        raise ValueError("Analysis needs a nonempty solution_flow.")
+    used_indices: set[int] = set()
+    for step in flow:
+        if not isinstance(step, dict) or set(step) != {"skill_index", "application"}:
+            raise ValueError("Each solution_flow step needs skill_index and application.")
+        index = step["skill_index"]
+        if type(index) is not int or not 1 <= index <= len(skills):
+            raise ValueError("solution_flow refers to a nonexistent skill_index.")
+        if not isinstance(step["application"], str) or not step["application"].strip():
+            raise ValueError("Each solution_flow application must explain the skill's role.")
+        used_indices.add(index)
+    if used_indices != set(range(1, len(skills) + 1)):
+        raise ValueError("Every extracted skill must appear in solution_flow.")
     return value
 
 
@@ -370,11 +388,20 @@ def load_analysis(output_file: Path, provider: str) -> dict:
 
     try:
         data = validate_analysis_response(data)
-        data["skill_path"] = normalize_skill_path_parts(
-            _flatten_skill_path_items(data["skill_path"])
-        )
-        if not data["skill_path"]:
-            raise ValueError("AI response field 'skill_path' must contain a valid path.")
+        paths: set[str] = set()
+        for index, skill in enumerate(data["skills"], 1):
+            raw_parts = _flatten_skill_path_items(skill["skill_path"])
+            if any(part in {".", ".."} for part in raw_parts):
+                raise ValueError(f"Skill {index} path cannot contain '.' or '..'.")
+            parts = normalize_skill_path_parts(raw_parts)
+            if not parts:
+                raise ValueError(f"Skill {index} needs a valid skill_path.")
+            validate_skill_path_parts(parts)
+            path = "/".join(parts)
+            if path in paths:
+                raise ValueError(f"Duplicate proposed skill path: {path}.")
+            paths.add(path)
+            skill["skill_path"] = parts
         output_file.write_text(
             json.dumps(data, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
@@ -551,10 +578,14 @@ If you choose CREATE_NEW, path must be null.
                         str(MATCH_SCHEMA_FILE),
                         "-o",
                         str(output_file),
-                        prompt,
+                        "-",
                     ],
                     cwd=ROOT,
                     check=True,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    input=prompt,
                 )
                 result = json.loads(output_file.read_text(encoding="utf-8"))
             else:
@@ -605,30 +636,24 @@ If you choose CREATE_NEW, path must be null.
 
 def skill_content(analysis: dict, skill_file: Path) -> str:
     """Build a reusable thinking guide, not a problem-specific solution note."""
-    questions = _string_list(analysis.get("questions", []))
-    signals = _string_list(analysis.get("signals", []))
-    patterns = _string_list(analysis.get("reasoning_patterns", []))
-    related = _string_list(analysis.get("probably_related", []))
-
-    return (
-        f"# {skill_file.stem.replace('_', ' ').title()}\n\n"
-
-        "## Signals\n\n"
-        + "\n".join(f"- {signal}" for signal in signals)
-        + "\n\n"
-
-        "## Questions\n\n"
-        + "\n".join(f"- {question}" for question in questions)
-        + "\n\n"
-
-        "## Reasoning Patterns\n\n"
-        + "\n".join(f"- {pattern}" for pattern in patterns)
-        + "\n\n"
-
-        "## Probably Related\n\n"
-        + "\n".join(f"- {related_item}" for related_item in related)
-        + "\n"
+    sections = (
+        ("Signals", "signals", False),
+        ("Questions", "questions", False),
+        ("How to Apply", "how_to_apply", True),
+        ("Why It Works", "why_it_works", False),
+        ("When It Fails", "when_it_fails", False),
+        ("Reasoning Patterns", "reasoning_patterns", False),
+        ("Probably Related", "probably_related", False),
     )
+    parts = [f"# {skill_file.stem.replace('_', ' ').title()}"]
+    for heading, field, ordered in sections:
+        items = _string_list(analysis.get(field, []))
+        if not items:
+            continue
+        lines = [f"{index}. {item}" if ordered else f"- {item}"
+                 for index, item in enumerate(items, 1)]
+        parts.append(f"## {heading}\n\n" + "\n".join(lines))
+    return "\n\n".join(parts) + "\n"
 
 
 def skill_quality_warnings(content: str) -> list[str]:
@@ -653,26 +678,25 @@ def print_skill_quality_warnings(content: str) -> None:
     print("Review the proposal and generalize these details if needed.")
 
 
-def create_skill(analysis: dict) -> Path:
-    skill_file = get_skill_path(analysis)
-
-    skill_file.parent.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-
-    skill_file.write_text(
-        skill_content(analysis, skill_file),
-        encoding="utf-8",
-    )
-
-    return skill_file
-
-
 def strip_markdown_fence(content: str) -> str:
     content = content.strip()
     fenced = re.fullmatch(r"```(?:markdown|md)?\s*(.*?)\s*```", content, re.DOTALL)
     return (fenced.group(1) if fenced else content).rstrip() + "\n"
+
+
+def missing_teaching_sections(content: str) -> list[str]:
+    """Find required teaching sections absent or empty in a proposed skill."""
+    headings = list(re.finditer(r"^## ([^\r\n]+?)[ \t]*$", content, flags=re.MULTILINE))
+    bodies = {
+        match.group(1).strip(): content[
+            match.end():headings[index + 1].start() if index + 1 < len(headings) else len(content)
+        ].strip()
+        for index, match in enumerate(headings)
+    }
+    return [
+        heading for heading in ("Signals", "How to Apply", "Why It Works", "When It Fails")
+        if not bodies.get(heading)
+    ]
 
 
 def draft_skill_extension(analysis: dict, skill_file: Path, provider: str) -> str | None:
@@ -689,7 +713,12 @@ NEW ANALYSIS:
 {json.dumps(analysis, indent=2, ensure_ascii=False)}
 
 Return the complete revised Markdown skill. Preserve helpful existing material,
-add only reusable insights missing from it, and return Markdown only. Do not use tools.
+add only reusable insights missing from it, and return Markdown only. Organize
+the result with nonempty sections named exactly ## Signals, ## How to Apply,
+## Why It Works, and ## When It Fails. Keep useful questions, reasoning
+patterns, and related skills. Explain the technique's conditions, application,
+proof, and boundaries; use concise formulas when they help, with defined terms.
+Do not use tools.
 """
 
     try:
@@ -710,10 +739,14 @@ add only reusable insights missing from it, and return Markdown only. Do not use
                         "read-only",
                         "-o",
                         str(output_file),
-                        prompt,
+                        "-",
                     ],
                     cwd=ROOT,
                     check=True,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    input=prompt,
                 )
                 return strip_markdown_fence(output_file.read_text(encoding="utf-8"))
             finally:
@@ -756,6 +789,7 @@ def verify_skill_claims(
     decision: str,
     proposed_content: str = "",
     previous_content: str = "",
+    skill_index: int | None = None,
 ) -> bool:
     """Review claims in a separate AI call and keep an inspectable report."""
     prompt = f"""{VERIFICATION_PROMPT_FILE.read_text(encoding='utf-8')}
@@ -779,7 +813,8 @@ PROPOSED SKILL (empty for REUSE):
 
 Do not use tools. Return only one JSON object.
 """
-    report_file = problem_dir / "verification.json"
+    report_name = f"verification-{skill_index}.json" if skill_index else "verification.json"
+    report_file = problem_dir / report_name
     with tempfile.NamedTemporaryFile(
         prefix="skill-verification-", suffix=".json", dir=ROOT, delete=False
     ) as handle:
@@ -830,26 +865,39 @@ Do not use tools. Return only one JSON object.
     return report["status"] == "PASS"
 
 
-def process_skill(
-    analysis: dict,
+@dataclass(frozen=True)
+class SkillPlan:
+    index: int
+    decision: str
+    path: Path
+    proposal: str | None = None
+    before: str | None = None
+
+
+def prepare_skill(
+    skill: dict,
     provider: str,
     problem_dir: Path,
+    *,
+    index: int = 1,
+    verification_input: dict | None = None,
     review: bool = False,
-    apply_extension: bool = False,
-) -> str:
-    skill_file = get_skill_path(analysis)
+    numbered_report: bool = False,
+) -> tuple[str, SkillPlan | None]:
+    """Match and verify one skill without modifying the library."""
+    skill_file = get_skill_path(skill)
+    evidence = verification_input if verification_input is not None else skill
+    report_index = index if numbered_report else None
 
-    print()
-    print("Skill detection")
+    print(f"\nSkill {index}: {'/'.join(_flatten_skill_path_items(skill['skill_path']))}")
     print("----------------")
-
-    decision, existing, reason = ask_existing_skill_match(analysis, provider)
+    decision, existing, reason = ask_existing_skill_match(skill, provider)
     if decision == "MATCH_FAILED":
         print("MATCHING FAILED")
         print("No skill was created. Rerun after reviewing the matcher error.")
         if reason:
             print(f"Reason: {reason}")
-        return "MATCH_FAILED"
+        return decision, None
 
     if existing is not None:
         print(f"{decision} EXISTING SKILL")
@@ -857,72 +905,175 @@ def process_skill(
         if reason:
             print(f"Reason: {reason}")
         if decision == "EXTEND":
-            proposal = draft_skill_extension(analysis, existing, provider)
+            before = existing.read_text(encoding="utf-8")
+            proposal = draft_skill_extension(skill, existing, provider)
             if proposal is None:
-                return "EXTEND_FAILED"
-            if proposal is not None:
-                print()
-                print("Extension proposal")
-                print("------------------")
-                print_skill_quality_warnings(proposal)
-                print_diff(
-                    existing.read_text(encoding="utf-8"),
-                    proposal,
-                    existing.relative_to(ROOT).as_posix(),
-                    existing.relative_to(ROOT).as_posix(),
-                )
-                if not verify_skill_claims(
-                    analysis, problem_dir, provider, "EXTEND", proposal,
-                    existing.read_text(encoding="utf-8"),
-                ):
-                    print("Extension not applied; review verification.json.")
-                    return "VERIFY_FAILED"
-                if apply_extension:
-                    answer = input("\nApply this extension? [y/N]: ").strip().lower()
-                    if answer in {"y", "yes"}:
-                        existing.write_text(proposal, encoding="utf-8")
-                        print(f"Updated skill: {existing}")
-                    else:
-                        print("Extension not applied.")
-                else:
-                    print("Extension preview (not written)")
-        elif not verify_skill_claims(analysis, problem_dir, provider, "REUSE"):
-            print("Analysis not archived; review verification.json.")
-            return "VERIFY_FAILED"
-        return decision
+                return "EXTEND_FAILED", None
+            missing_sections = missing_teaching_sections(proposal)
+            if missing_sections:
+                print("Extension lacks teaching sections: " + ", ".join(missing_sections))
+                return "EXTEND_FAILED", None
+            print("\nExtension proposal\n------------------")
+            print_skill_quality_warnings(proposal)
+            label = existing.relative_to(ROOT).as_posix()
+            print_diff(before, proposal, label, label)
+            if not verify_skill_claims(
+                evidence, problem_dir, provider, "EXTEND", proposal, before,
+                skill_index=report_index,
+            ):
+                print("Extension not applied; review its claim report.")
+                return "VERIFY_FAILED", None
+            return decision, SkillPlan(index, decision, existing, proposal, before)
+        if not verify_skill_claims(
+            evidence, problem_dir, provider, "REUSE", skill_index=report_index
+        ):
+            print("Analysis not archived; review its claim report.")
+            return "VERIFY_FAILED", None
+        return decision, SkillPlan(index, decision, existing)
 
     print("CREATE NEW SKILL")
     print(skill_file)
     if skill_file.exists():
         print("PATH COLLISION: This path already has a different skill.")
-        print("Choose a distinct taxonomy path before creating the new skill.")
-        return "PATH_COLLISION"
-    proposed_content = skill_content(analysis, skill_file)
-    print_skill_quality_warnings(proposed_content)
+        return "PATH_COLLISION", None
+    proposal = skill_content(skill, skill_file)
+    print_skill_quality_warnings(proposal)
     if not verify_skill_claims(
-        analysis, problem_dir, provider, "CREATE_NEW", proposed_content
+        evidence, problem_dir, provider, "CREATE_NEW", proposal,
+        skill_index=report_index,
     ):
-        print("Skill not created; review verification.json.")
-        return "VERIFY_FAILED"
-
+        print("Skill not created; review its claim report.")
+        return "VERIFY_FAILED", None
     if review:
-        print()
-        print("New-skill preview (not written)")
-        print("------------------------------")
-        print_diff(
-            "",
-            proposed_content,
-            "/dev/null",
-            skill_file.relative_to(ROOT).as_posix(),
+        print("\nNew-skill preview (not written)\n------------------------------")
+        print_diff("", proposal, "/dev/null", skill_file.relative_to(ROOT).as_posix())
+    return decision, SkillPlan(index, decision, skill_file, proposal)
+
+
+def apply_skill_plans(plans: list[SkillPlan], apply_extensions: bool) -> None:
+    """Write verified proposals together and restore earlier files on failure."""
+    writes = [
+        plan for plan in plans
+        if plan.decision == "CREATE_NEW" or (
+            plan.decision == "EXTEND" and apply_extensions
         )
-        return "CREATE_NEW"
+    ]
+    originals: list[tuple[Path, bytes | None]] = []
+    try:
+        for plan in writes:
+            if plan.decision == "CREATE_NEW":
+                plan.path.parent.mkdir(parents=True, exist_ok=True)
+                with plan.path.open("x", encoding="utf-8") as handle:
+                    originals.append((plan.path, None))
+                    handle.write(plan.proposal or "")
+            else:
+                current = plan.path.read_bytes()
+                normalized = current.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
+                if normalized != plan.before:
+                    raise RuntimeError(f"Skill changed during review: {plan.path}")
+                originals.append((plan.path, current))
+                plan.path.write_text(plan.proposal or "", encoding="utf-8")
+    except BaseException:
+        for path, original in reversed(originals):
+            try:
+                if original is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    path.write_bytes(original)
+            except OSError as error:
+                print(f"WARNING: Could not restore {path}: {error}")
+        raise
+    for plan in writes:
+        action = "Created" if plan.decision == "CREATE_NEW" else "Updated"
+        print(f"{action} skill: {plan.path}")
 
-    created = create_skill(analysis)
 
-    print()
-    print("Created skill:")
-    print(created)
-    return "CREATE_NEW"
+def process_skill(
+    analysis: dict,
+    provider: str,
+    problem_dir: Path,
+    review: bool = False,
+    apply_extension: bool = False,
+) -> str:
+    """Handle one skill directly; the full workflow uses process_skills."""
+    status, plan = prepare_skill(
+        analysis, provider, problem_dir, review=review
+    )
+    if plan is None:
+        return status
+    if review:
+        if plan.decision == "EXTEND":
+            print("Extension preview (not written)")
+        return status
+    update = False
+    if plan.decision == "EXTEND":
+        if apply_extension:
+            update = input("\nApply this extension? [y/N]: ").strip().lower() in {"y", "yes"}
+        if not update:
+            print("Extension preview (not written)")
+    apply_skill_plans([plan], update)
+    return status
+
+
+def process_skills(
+    analysis: dict,
+    provider: str,
+    problem_dir: Path,
+    *,
+    review: bool = False,
+    apply_extension: bool = False,
+) -> list[dict] | None:
+    """Prepare every skill before any write, then record the resolved paths."""
+    plans: list[SkillPlan] = []
+    for index, skill in enumerate(analysis["skills"], 1):
+        evidence = {
+            "core_idea": analysis["core_idea"],
+            "key_observations": analysis["key_observations"],
+            "solution_flow": [
+                step for step in analysis["solution_flow"]
+                if step["skill_index"] == index
+            ],
+            "skill": skill,
+        }
+        _, plan = prepare_skill(
+            skill, provider, problem_dir, index=index,
+            verification_input=evidence, review=review, numbered_report=True,
+        )
+        if plan is None:
+            print("No skills were written for this problem.")
+            return None
+        plans.append(plan)
+
+    write_paths = [plan.path.resolve() for plan in plans if plan.decision != "REUSE"]
+    if len(write_paths) != len(set(write_paths)):
+        print("Multiple extracted skills resolved to one writable note; revise the analysis.")
+        return None
+
+    update = False
+    if review:
+        if any(plan.decision == "EXTEND" for plan in plans):
+            print("Extension preview (not written)")
+    else:
+        extensions = sum(plan.decision == "EXTEND" for plan in plans)
+        if extensions and apply_extension:
+            update = input(
+                f"\nApply {extensions} verified extension(s)? [y/N]: "
+            ).strip().lower() in {"y", "yes"}
+        apply_skill_plans(plans, update)
+    return [
+        {
+            "skill_index": plan.index,
+            "decision": plan.decision,
+            "path": plan.path.relative_to(SKILLS_DIR).as_posix(),
+            "written": not review and (
+                plan.decision == "CREATE_NEW" or (
+                    plan.decision == "EXTEND" and update
+                )
+            ),
+            "verification": f"verification-{plan.index}.json",
+        }
+        for plan in plans
+    ]
 
 
 def analyze_one(
@@ -945,13 +1096,21 @@ def analyze_one(
     output_file = problem_dir / "analysis.json"
     run_analysis(provider, problem_dir, output_file)
     analysis = load_analysis(output_file, provider)
-    decision = process_skill(analysis, provider, problem_dir, review, apply_extension)
-    if decision in {"MATCH_FAILED", "PATH_COLLISION", "EXTEND_FAILED", "VERIFY_FAILED"}:
+    resolved = process_skills(
+        analysis, provider, problem_dir,
+        review=review, apply_extension=apply_extension,
+    )
+    if resolved is None:
         print(f"Kept in Problem/Analyze: {problem_dir.name}")
         return False
     if review:
         print(f"Review only; kept in Problem/Analyze: {problem_dir.name}")
         return True
+
+    analysis["resolved_skills"] = resolved
+    output_file.write_text(
+        json.dumps(analysis, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
 
     COMPLETED_DIR.mkdir(parents=True, exist_ok=True)
     if destination.exists():

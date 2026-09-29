@@ -9,12 +9,15 @@ from analyze import (
     ROOT,
     SKILLS_DIR,
     ask_existing_skill_match,
+    draft_skill_extension,
     extract_json_response,
     get_skill_path,
     process_skill,
     validate_analysis_response,
     validate_match_response,
     normalize_skill_path_parts,
+    missing_teaching_sections,
+    skill_content,
     skill_quality_warnings,
     validate_skill_path_parts,
 )
@@ -34,6 +37,25 @@ def seeded_library():
         )
         with patch("analyze.SKILLS_DIR", skills):
             yield skills, skill
+
+
+def teaching_extension(before: str, insight: str) -> str:
+    return (
+        before
+        + "\n## Signals\n\n- A preserved statistic appears.\n"
+        + f"\n## How to Apply\n\n1. {insight}\n"
+        + "\n## Why It Works\n\n- Each transition preserves the statistic.\n"
+        + "\n## When It Fails\n\n- Another transition can change it.\n"
+    )
+
+
+def completed_analysis(skill: dict) -> dict:
+    return {
+        "core_idea": "Use the extracted technique.",
+        "key_observations": [],
+        "solution_flow": [{"skill_index": 1, "application": "Apply it here."}],
+        "skills": [skill],
+    }
 
 
 class SkillSearchTests(unittest.TestCase):
@@ -121,8 +143,12 @@ class SkillSearchTests(unittest.TestCase):
         warnings = skill_quality_warnings(
             "In this problem, use two pointers and precompute transitions for index i."
         )
-        self.assertEqual(len(warnings), 2)
+        self.assertEqual(len(warnings), 1)
         self.assertIn("in this problem", warnings[0])
+        self.assertEqual(
+            skill_quality_warnings("Let index i satisfy $dp[i] = dp[i-1] + 1$."),
+            [],
+        )
         self.assertEqual(
             skill_quality_warnings(
                 "Use two pointers, binary lifting, suffix arrays, segment trees, "
@@ -132,29 +158,90 @@ class SkillSearchTests(unittest.TestCase):
         )
 
     def test_analysis_response_requires_all_schema_fields(self) -> None:
-        with self.assertRaisesRegex(ValueError, "missing required"):
+        with self.assertRaisesRegex(ValueError, "Analysis needs"):
             validate_analysis_response({"core_idea": "invariant"})
 
-    def test_analysis_response_allows_legacy_missing_signals(self) -> None:
-        analysis = {
-            "core_idea": "invariant",
-            "key_observations": [],
+    def test_analysis_response_requires_teaching_fields(self) -> None:
+        skill = {
             "reasoning_patterns": ["Track the invariant."],
             "questions": ["What stays unchanged?"],
             "skill_path": ["invariants"],
             "probably_related": [],
         }
+        analysis = completed_analysis(skill)
+        with self.assertRaisesRegex(ValueError, "missing required"):
+            validate_analysis_response(analysis)
+
+        skill.update({
+            "signals": ["An operation preserves a quantity."],
+            "how_to_apply": ["Identify the preserved quantity."],
+            "why_it_works": ["Each transition keeps it constant."],
+            "when_it_fails": ["An operation can change that quantity."],
+        })
         self.assertEqual(validate_analysis_response(analysis), analysis)
 
-    def test_analysis_response_rejects_empty_skill_content(self) -> None:
-        analysis = {
-            "core_idea": "invariant",
-            "key_observations": [],
-            "reasoning_patterns": [],
-            "questions": [],
+    def test_teaching_fields_cannot_be_blank(self) -> None:
+        analysis = completed_analysis({
+            "reasoning_patterns": ["Track an invariant."],
+            "questions": ["What stays unchanged?"],
+            "signals": ["A move may preserve a value."],
+            "how_to_apply": ["  "],
+            "why_it_works": ["Each move preserves the value."],
+            "when_it_fails": ["Some moves can change it."],
             "skill_path": ["invariants"],
             "probably_related": [],
+        })
+        with self.assertRaisesRegex(ValueError, "how_to_apply.*useful item"):
+            validate_analysis_response(analysis)
+
+    def test_solution_flow_must_reference_each_real_skill(self) -> None:
+        skill = {
+            "skill_path": ["greedy", "safe-choice"],
+            "signals": ["Choices affect future feasibility."],
+            "questions": ["Can I preserve feasibility?"],
+            "how_to_apply": ["Check that a completion remains."],
+            "why_it_works": ["The invariant keeps a completion available."],
+            "when_it_fails": ["The check omits a required constraint."],
+            "reasoning_patterns": ["Preserve future feasibility."],
+            "probably_related": [],
         }
+        analysis = completed_analysis(skill)
+        analysis["solution_flow"][0]["skill_index"] = 2
+        with self.assertRaisesRegex(ValueError, "nonexistent skill_index"):
+            validate_analysis_response(analysis)
+
+    def test_skill_note_teaches_application_proof_and_boundary(self) -> None:
+        analysis = {
+            "signals": ["A choice must keep a resource available."],
+            "questions": ["What must remain feasible?"],
+            "how_to_apply": ["Choose a move only if the remaining state stays feasible."],
+            "why_it_works": ["If $f(s) \\ge 0$ is preserved, every choice leaves a completion."],
+            "when_it_fails": ["The test fails when $f(s)$ overlooks a required constraint."],
+            "reasoning_patterns": ["Preserve future feasibility."],
+            "probably_related": [],
+        }
+        content = skill_content(analysis, SKILLS_DIR / "greedy" / "safe-choice.md")
+        self.assertIn("## Signals\n\n- A choice", content)
+        self.assertIn("## How to Apply\n\n1. Choose", content)
+        self.assertIn("## Why It Works\n\n- If $f(s) \\ge 0$", content)
+        self.assertIn("## When It Fails\n\n- The test fails", content)
+        self.assertEqual(missing_teaching_sections(content), [])
+        self.assertIn(
+            "Signals",
+            missing_teaching_sections("## Signals\n\n## How to Apply\n\n1. Try a move.\n"),
+        )
+
+    def test_analysis_response_rejects_empty_skill_content(self) -> None:
+        analysis = completed_analysis({
+            "reasoning_patterns": [],
+            "questions": [],
+            "signals": [],
+            "how_to_apply": [],
+            "why_it_works": [],
+            "when_it_fails": [],
+            "skill_path": ["invariants"],
+            "probably_related": [],
+        })
         with self.assertRaisesRegex(ValueError, "needs a useful item"):
             validate_analysis_response(analysis)
 
@@ -188,6 +275,49 @@ class SkillSearchTests(unittest.TestCase):
             self.assertIsNotNone(existing)
             self.assertIsInstance(run.call_args.kwargs["input"], str)
 
+    @patch("analyze.subprocess.run")
+    def test_codex_match_sends_candidate_notes_via_standard_input(self, run) -> None:
+        with seeded_library() as (skills, _):
+            candidate = load_skill_documents(skills)[0]
+
+            def reply(command, **kwargs):
+                output = Path(command[command.index("-o") + 1])
+                output.write_text(
+                    '{"decision":"REUSE","path":"'
+                    + candidate.relative_path
+                    + '","reason":"Same technique."}',
+                    encoding="utf-8",
+                )
+            run.side_effect = reply
+            analysis = {
+                "core_idea": "Use a minimum level invariant.",
+                "skill_path": ["invariants", "minimum-level"],
+            }
+
+            decision, existing, _ = ask_existing_skill_match(analysis, "codex")
+
+            self.assertEqual(decision, "REUSE")
+            self.assertIsNotNone(existing)
+            self.assertEqual(run.call_args.args[0][-1], "-")
+            self.assertIn("EXISTING SKILL CANDIDATES", run.call_args.kwargs["input"])
+
+    @patch("analyze.subprocess.run")
+    def test_codex_extension_sends_full_note_via_standard_input(self, run) -> None:
+        with seeded_library() as (_, existing):
+            def reply(command, **kwargs):
+                output = Path(command[command.index("-o") + 1])
+                output.write_text(
+                    teaching_extension(existing.read_text(encoding="utf-8"), "Keep the invariant."),
+                    encoding="utf-8",
+                )
+            run.side_effect = reply
+
+            proposal = draft_skill_extension({"core_idea": "invariant"}, existing, "codex")
+
+            self.assertIn("## Why It Works", proposal)
+            self.assertEqual(run.call_args.args[0][-1], "-")
+            self.assertIn("EXISTING SKILL:", run.call_args.kwargs["input"])
+
     @patch("analyze.subprocess.run", side_effect=OSError("CLI unavailable"))
     def test_matcher_failure_does_not_create_a_new_skill(self, run) -> None:
         analysis = {
@@ -209,6 +339,9 @@ class SkillSearchTests(unittest.TestCase):
             "core_idea": "Compress the state to its decisive invariant.",
             "signals": ["A small statistic controls feasibility."],
             "questions": ["Can I find an invariant?"],
+            "how_to_apply": ["Identify the decisive statistic."],
+            "why_it_works": ["All future choices depend only on that statistic."],
+            "when_it_fails": ["It fails if another state detail affects a transition."],
             "key_observations": ["The state can be compressed."],
             "reasoning_patterns": ["Preserve the useful invariant."],
             "probably_related": [],
@@ -225,6 +358,9 @@ class SkillSearchTests(unittest.TestCase):
         self.assertIn("+++ skills/__review_test__/preview_only.md", output.getvalue())
         self.assertIn("## Signals", output.getvalue())
         self.assertIn("A small statistic controls feasibility.", output.getvalue())
+        self.assertIn("## How to Apply", output.getvalue())
+        self.assertIn("## Why It Works", output.getvalue())
+        self.assertIn("## When It Fails", output.getvalue())
         self.assertNotIn("## Core Idea", output.getvalue())
         self.assertNotIn("## Key Observations", output.getvalue())
         self.assertNotIn("Compress the state to its decisive invariant.", output.getvalue())
@@ -239,7 +375,7 @@ class SkillSearchTests(unittest.TestCase):
         with seeded_library() as (_, existing):
             before = existing.read_text(encoding="utf-8")
             match.return_value = ("EXTEND", existing, "Related technique.")
-            draft.return_value = before + "\n## Extra Insight\n\n- New reusable detail.\n"
+            draft.return_value = teaching_extension(before, "Use the new reusable detail.")
             analysis = {"skill_path": ["__review_test__/extension_preview"]}
 
             output = StringIO()
@@ -248,7 +384,7 @@ class SkillSearchTests(unittest.TestCase):
 
             self.assertEqual(existing.read_text(encoding="utf-8"), before)
             self.assertIn("Extension preview (not written)", output.getvalue())
-            self.assertIn("+## Extra Insight", output.getvalue())
+            self.assertIn("+## How to Apply", output.getvalue())
 
     @patch("builtins.input", return_value="y")
     @patch("analyze.draft_skill_extension")
@@ -261,7 +397,7 @@ class SkillSearchTests(unittest.TestCase):
     ) -> None:
         with seeded_library() as (_, existing):
             before = existing.read_text(encoding="utf-8")
-            proposal = before + "\n## Extra Insight\n\n- New reusable detail.\n"
+            proposal = teaching_extension(before, "Use the new reusable detail.")
             match.return_value = ("EXTEND", existing, "Related technique.")
             draft.return_value = proposal
 
@@ -276,11 +412,27 @@ class SkillSearchTests(unittest.TestCase):
         with seeded_library() as (_, existing):
             before = existing.read_text(encoding="utf-8")
             match.return_value = ("EXTEND", existing, "Related technique.")
-            draft.return_value = before + "\n## Extra Insight\n\n- Preview only.\n"
+            draft.return_value = teaching_extension(before, "Preview only.")
 
             process_skill({"skill_path": ["unused"]}, "codex", self.problem_dir)
 
             self.assertEqual(existing.read_text(encoding="utf-8"), before)
+
+    @patch("analyze.draft_skill_extension")
+    @patch("analyze.ask_existing_skill_match")
+    def test_extension_without_teaching_sections_is_rejected(self, match, draft) -> None:
+        with seeded_library() as (_, existing):
+            before = existing.read_text(encoding="utf-8")
+            match.return_value = ("EXTEND", existing, "Related technique.")
+            draft.return_value = before + "\n## Extra Insight\n\n- Generic advice.\n"
+            output = StringIO()
+
+            with redirect_stdout(output):
+                result = process_skill({"skill_path": ["unused"]}, "codex", self.problem_dir)
+
+            self.assertEqual(result, "EXTEND_FAILED")
+            self.assertEqual(existing.read_text(encoding="utf-8"), before)
+            self.assertIn("Extension lacks teaching sections", output.getvalue())
 
     @patch("analyze.ask_existing_skill_match", return_value=("CREATE_NEW", None, "Different insight."))
     def test_existing_path_collision_does_not_overwrite_skill(self, match) -> None:

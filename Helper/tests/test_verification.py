@@ -45,8 +45,20 @@ class VerificationTests(unittest.TestCase):
             "reasoning_patterns": ["Use a critical value to test feasibility."],
             "questions": ["Which value is critical?"],
             "signals": ["The objective depends on the first missing value."],
+            "how_to_apply": ["Count copies of the critical value."],
+            "why_it_works": ["Each positive group requires a copy of that value."],
+            "when_it_fails": ["The method needs a single critical value."],
             "skill_path": ["feasibility", "critical-value"],
             "probably_related": [],
+        }
+        self.full_analysis = {
+            "core_idea": self.analysis["core_idea"],
+            "key_observations": self.analysis["key_observations"],
+            "solution_flow": [{"skill_index": 1, "application": "Use the critical value."}],
+            "skills": [{
+                key: value for key, value in self.analysis.items()
+                if key not in {"core_idea", "key_observations"}
+            }],
         }
 
     @staticmethod
@@ -75,7 +87,7 @@ class VerificationTests(unittest.TestCase):
     @patch("analyze.subprocess.run")
     def test_false_claim_prevents_skill_and_archive(self, run, generate, match) -> None:
         generate.side_effect = lambda provider, folder, output: output.write_text(
-            json.dumps(self.analysis), encoding="utf-8"
+            json.dumps(self.full_analysis), encoding="utf-8"
         )
         run.side_effect = self.provider_reply({
             "status": "FAIL",
@@ -93,7 +105,7 @@ class VerificationTests(unittest.TestCase):
         self.assertTrue(self.problem_dir.is_dir())
         self.assertFalse((self.skills_dir / "feasibility" / "critical-value.md").exists())
         self.assertFalse((self.completed_dir / "mex-case").exists())
-        report = json.loads((self.problem_dir / "verification.json").read_text(encoding="utf-8"))
+        report = json.loads((self.problem_dir / "verification-1.json").read_text(encoding="utf-8"))
         self.assertEqual(report["status"], "FAIL")
         self.assertIn("{0, 1}", report["checks"][0])
         self.assertIn("Actively try small counterexamples", run.call_args.kwargs["input"])
@@ -105,7 +117,7 @@ class VerificationTests(unittest.TestCase):
     @patch("analyze.run_analysis")
     @patch("analyze.subprocess.run")
     def test_pass_creates_skill_and_archives_review(self, run, generate, match) -> None:
-        corrected = dict(self.analysis)
+        corrected = dict(self.full_analysis)
         corrected["key_observations"] = [
             "A group containing 0 but not 1 has MEX 1."
         ]
@@ -123,7 +135,7 @@ class VerificationTests(unittest.TestCase):
 
         self.assertTrue((self.skills_dir / "feasibility" / "critical-value.md").is_file())
         self.assertEqual(
-            json.loads((self.completed_dir / "mex-case" / "verification.json").read_text(encoding="utf-8"))["status"],
+            json.loads((self.completed_dir / "mex-case" / "verification-1.json").read_text(encoding="utf-8"))["status"],
             "PASS",
         )
 
@@ -132,12 +144,12 @@ class VerificationTests(unittest.TestCase):
     @patch("analyze.subprocess.run", side_effect=OSError("provider unavailable"))
     def test_verifier_error_fails_closed(self, run, generate, match) -> None:
         generate.side_effect = lambda provider, folder, output: output.write_text(
-            json.dumps(self.analysis), encoding="utf-8"
+            json.dumps(self.full_analysis), encoding="utf-8"
         )
         with redirect_stdout(StringIO()):
             self.assertFalse(analyze.analyze_one(self.problem_dir, "codex"))
         self.assertFalse((self.skills_dir / "feasibility" / "critical-value.md").exists())
-        report = json.loads((self.problem_dir / "verification.json").read_text(encoding="utf-8"))
+        report = json.loads((self.problem_dir / "verification-1.json").read_text(encoding="utf-8"))
         self.assertEqual(report["status"], "ERROR")
 
     @patch("builtins.input", return_value="y")
@@ -148,7 +160,12 @@ class VerificationTests(unittest.TestCase):
         existing = self.skills_dir / "existing.md"
         existing.parent.mkdir(parents=True, exist_ok=True)
         existing.write_text("# Existing\n", encoding="utf-8")
-        draft.return_value = "# Existing\n\n- MEX is always 1 when 0 is present.\n"
+        draft.return_value = (
+            "# Existing\n\n## Signals\n\n- A MEX target appears.\n"
+            "\n## How to Apply\n\n1. Use the critical value.\n"
+            "\n## Why It Works\n\n- MEX is always 1 when 0 is present.\n"
+            "\n## When It Fails\n\n- The critical value is absent.\n"
+        )
         match.return_value = ("EXTEND", existing, "Related.")
         run.side_effect = self.provider_reply({
             "status": "FAIL",
@@ -181,7 +198,9 @@ class VerificationTests(unittest.TestCase):
             result = analyze.process_skill(self.analysis, "codex", self.problem_dir)
 
         self.assertEqual(result, "VERIFY_FAILED")
-        verify.assert_called_once_with(self.analysis, self.problem_dir, "codex", "REUSE")
+        verify.assert_called_once_with(
+            self.analysis, self.problem_dir, "codex", "REUSE", skill_index=None
+        )
 
 
 if __name__ == "__main__":

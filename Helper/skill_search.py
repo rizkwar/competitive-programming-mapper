@@ -80,6 +80,10 @@ def analysis_query(analysis: dict) -> str:
         "key_observations",
         "reasoning_patterns",
         "questions",
+        "signals",
+        "how_to_apply",
+        "why_it_works",
+        "when_it_fails",
         "probably_related",
     ):
         fields.extend(flatten(analysis.get(key, "")))
